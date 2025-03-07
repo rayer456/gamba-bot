@@ -182,18 +182,9 @@ impl Bot {
             self.chat(response);
         }
 
+        // Add command specific functionality here
         match command.cmd.as_str() {
-            "!clip" => {
-                self.create_clip(sender).ok();
-            }
-            "!followage" => {
-                self.get_followage(sender, command).await.ok();
-            }
-            "!hours" => {
-                let mut rng = rand::thread_rng();
-                let hours = rng.gen_range(6500..7500);
-                self.chat(format!("Total playtime: {hours} hours"));
-            }
+            
             _ => (), // Don't do any additional work for these commands, a response defined in commands.yaml was most likely already sent.
         }
     }
@@ -258,58 +249,4 @@ impl Bot {
             }
         }
     }
-
-    pub fn create_clip(&mut self, sender: Sender<Result<String, AppError>>) -> Result<()> {
-        let b_id = self.cfg.twitch_cfg.broadcaster_id.clone();
-        let a_token = self.stream_token.access_token.clone();
-        let c_id = self.cfg.twitch_cfg.client_id.clone();
-
-        thread::spawn(move || {
-            let clip_id = command::create_clip(b_id, a_token, c_id);
-            sender.send(clip_id).expect("Failed to send reply to the receiver.");
-        });
-
-        Ok(())
-    }
-
-    pub async fn get_followage(&mut self, sender: Sender<Result<String, AppError>>, command: Command) -> Result<()> {
-        // return the followage of the requested user or of the user requesting
-
-        let mut user = command.requested_by.unwrap();
-        if let Some(username) = command.arguments.first() {
-            user = User::new(username.to_string(), vec![]);
-        }
-
-        let user_id = match self.get_broadcaster_id(&user.username).await {
-            Ok(id) => id,
-            Err(e) => {
-                self.chat(format!("Who the fuck is that?"));
-                bail!(e)
-            }
-        };
-
-        let b_id = self.cfg.twitch_cfg.broadcaster_id.clone();
-        let a_token = self.stream_token.access_token.clone();
-        let c_id = self.cfg.twitch_cfg.client_id.clone();
-        thread::spawn(move || {
-            let following = command::get_followage(user_id, b_id, a_token, c_id, user);
-            sender.send(following).expect("Failed to send reply to the receiver.");
-        });
-
-        Ok(())
-    }
-
-    /* fn get_all_commands_as_str(&self) -> String {
-        let mut result = String::new();
-        for command in self.active_commands.clone() {
-            match command.cmd.as_str() {
-                "!followage" => result += format!("!followage [username], ").as_str(),
-                _ => result += format!("{}, ", command.cmd).as_str(),
-            }
-        }
-        if let Some(stripped) = result.strip_suffix(", ") {
-            result = stripped.to_string();
-        }
-        result
-    } */
 }

@@ -1,5 +1,3 @@
-use chrono::Utc;
-use date_component::date_component;
 use reqwest::header::AUTHORIZATION;
 use serde::{de, Deserialize};
 use std::fmt::{self, Display};
@@ -10,8 +8,6 @@ use std::time::{Duration, SystemTime};
 
 use crate::message::{Group, Message, RecentUser, User};
 
-const CLIPS_URL: &'static str = "https://api.twitch.tv/helix/clips";
-const FOLLOWERS_URL: &'static str = "https://api.twitch.tv/helix/channels/followers";
 
 #[derive(Debug)]
 pub enum AppError {
@@ -203,123 +199,6 @@ pub async fn get_commands() -> Result<Vec<Command>> {
     };
 
     Ok(yaml_commands)
-}
-
-pub fn create_clip(broadcaster_id: String, access_token: String, client_id: String) -> Result<String, AppError> {
-    let params = [("broadcaster_id", broadcaster_id)];
-    let client = reqwest::blocking::Client::new();
-    let response = client
-        .post(CLIPS_URL)
-        .header(AUTHORIZATION, format!("Bearer {}", access_token))
-        .header("Client-Id", &client_id)
-        .form(&params)
-        .send();
-
-    let res = response?;
-    match res.status().as_u16() {
-        202 => {
-            let data: Value = serde_json::from_str(&res.text()?)?;
-            match data["data"][0]["id"].as_str() {
-                Some(id) => id.to_string(),
-                None => return Err(AppError::OtherError(format!("clip_id not found"))),
-            };
-            let edit_url = match data["data"][0]["edit_url"].as_str() {
-                Some(url) => url.to_string(),
-                None => return Err(AppError::OtherError(format!("edit_url not found"))),
-            };
-
-            return Ok(edit_url.strip_suffix("/edit").unwrap().to_string());
-        }
-        401 => {
-            return Err(AppError::InvalidTokenError {
-                cmd: "!clip".to_string(),
-                arguments: vec![],
-                requested_by: None,
-            })
-        }
-        other => return Err(AppError::OtherError(format!("{}: {}", other, res.text()?))),
-    };
-}
-
-pub fn get_followage(
-    user_id: String,
-    broadcaster_id: String,
-    access_token: String,
-    client_id: String,
-    user: User,
-) -> Result<String, AppError> {
-    let params = [("broadcaster_id", broadcaster_id), ("user_id", user_id)];
-    let client = reqwest::blocking::Client::new();
-    let response = client
-        .get(FOLLOWERS_URL)
-        .header(AUTHORIZATION, format!("Bearer {}", access_token))
-        .header("Client-Id", &client_id)
-        .query(&params)
-        .send()?;
-
-    match response.status().as_u16() {
-        200 => {
-            let data: Value = serde_json::from_str(&response.text()?)?;
-            match data["data"][0]["followed_at"].as_str() {
-                Some(date) => {
-                    match chrono::DateTime::parse_from_str(format!("{date} +0000").as_str(), "%Y-%m-%dT%H:%M:%SZ %z") {
-                        Ok(datetime) => {
-                            let date_comp = date_component::calculate(&datetime.to_utc(), &Utc::now());
-                            let mut result_string = format!("{} has been following for ", user.username);
-
-                            // if following for more than 1 day total
-                            match date_comp.year {
-                                0 => (),
-                                1 => result_string += format!("{} year ", date_comp.year).as_str(),
-                                _ => result_string += format!("{} years ", date_comp.year).as_str(),
-                            }
-                            match date_comp.month {
-                                0 => (),
-                                1 => result_string += format!("{} month ", date_comp.month).as_str(),
-                                _ => result_string += format!("{} months ", date_comp.month).as_str(),
-                            }
-                            match date_comp.day {
-                                0 => (),
-                                1 => result_string += format!("{} day ", date_comp.day).as_str(),
-                                _ => result_string += format!("{} days ", date_comp.day).as_str(),
-                            }
-
-                            // if following for less than 1 day total
-                            if date_comp.interval_days == 0 {
-                                match date_comp.hour {
-                                    0 => (),
-                                    1 => result_string += format!("{} hour ", date_comp.hour).as_str(),
-                                    _ => result_string += format!("{} hours ", date_comp.hour).as_str(),
-                                }
-                                match date_comp.minute {
-                                    0 => (),
-                                    1 => result_string += format!("{} minute ", date_comp.minute).as_str(),
-                                    _ => result_string += format!("{} minutes ", date_comp.minute).as_str(),
-                                }
-                                match date_comp.second {
-                                    0 => (),
-                                    1 => result_string += format!("{} second ", date_comp.second).as_str(),
-                                    _ => result_string += format!("{} seconds ", date_comp.second).as_str(),
-                                }
-                            }
-
-                            return Ok(result_string);
-                        }
-                        Err(e) => return Err(AppError::OtherError(format!("Couldn't convert date: {e}"))),
-                    }
-                }
-                None => return Ok(format!("{} isn't following", user.username)),
-            };
-        }
-        401 => {
-            return Err(AppError::InvalidTokenError {
-                cmd: "!followage".to_string(),
-                arguments: vec![],
-                requested_by: Some(user),
-            })
-        }
-        other => return Err(AppError::OtherError(format!("{}: {}", other, response.text()?))),
-    };
 }
 
 pub fn validate_and_return_command<'a>(
