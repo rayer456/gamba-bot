@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
-use std::sync::mpsc::{self, Receiver, Sender};
+// use std::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self};
 
 use crate::command::{self, AppError, Command};
@@ -65,9 +66,9 @@ impl Bot {
         }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) {
         // main loop
-        let (sender, receiver) = mpsc::channel();
+        let (sender, mut receiver) = mpsc::channel(32); // TODO: These should be struct fields
         loop {
             // read irc stream
             match self.irc_stream.read_irc() {
@@ -110,7 +111,7 @@ impl Bot {
             }
 
             // read the channel
-            self.read_channel(sender.clone(), &receiver).await;
+            self.read_channel(sender.clone(), &mut receiver).await;
 
             // hourly token validation
             self.stream_token.validate_if_invalid().await;
@@ -121,7 +122,7 @@ impl Bot {
     async fn read_channel(
         &mut self,
         sender: Sender<Result<String, AppError>>,
-        receiver: &Receiver<Result<String, AppError>>,
+        receiver: &mut Receiver<Result<String, AppError>>,
     ) {
         if let Ok(res) = receiver.try_recv() {
             match res {

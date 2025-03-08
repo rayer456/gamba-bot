@@ -1,14 +1,15 @@
+use core::panic;
 use std::{
-    io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
+    env, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}
 };
 
 use anyhow::{bail, Result};
-use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE};
+use reqwest::{header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE}, Client};
+use urlencoding::encode;
 
 use config::{TwitchConfig};
 
-use crate::config;
+use crate::{config, helpers};
 
 const TWITCH_AUTH_URL: &'static str = "https://id.twitch.tv/oauth2/authorize";
 const TWITCH_TOKEN_URL: &'static str = "https://id.twitch.tv/oauth2/token";
@@ -16,6 +17,8 @@ const TWITCH_TOKEN_URL: &'static str = "https://id.twitch.tv/oauth2/token";
 pub struct TwitchAuthProcess {
     cfg: TwitchConfig,
     tokens_path: String,
+    http_client: Client,
+    state: String,
 }
 
 impl TwitchAuthProcess {
@@ -23,38 +26,45 @@ impl TwitchAuthProcess {
         TwitchAuthProcess {
             cfg: cfg.clone(),
             tokens_path: String::new(),
+            http_client: Client::new(),
+            state: String::new(),
         }
     }
 
-    pub fn authorize_account(&mut self, tokens_path: &str, scope: &str) -> Result<()> {
+    pub async fn authorize_account(&mut self, tokens_path: &str, scope: &str) -> Result<()> {
         self.tokens_path = tokens_path.to_string();
+        self.state = helpers::get_rand_string(50);
+        let url = self.construct_auth_url(scope, &self.state);
 
-        let url = self.construct_auth_url(scope);
         match open::that(&url) {
             Ok(_) => println!("Opened authorization page successfully in browser"),
             Err(_) => println!("Couldn't open authorization page. Go to {url} and authorize"),
         }
-        self.start_server()
+        self.start_server().await
     }
 
-    fn construct_auth_url(&self, scope: &str) -> String {
-        format!("{TWITCH_AUTH_URL}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scope}&force_verify=true",
-        client_id = self.cfg.client_id,
-        redirect_uri = self.cfg.redirect_uri)
+    fn construct_auth_url(&self, scope: &str, state: &str) -> String {
+        format!("{TWITCH_AUTH_URL}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scope}&force_verify=true&state={state}",
+            client_id = self.cfg.client_id,
+            redirect_uri = self.cfg.redirect_uri.as_str(),
+        )
     }
 
-    fn start_server(&self) -> Result<()> {
+    async fn start_server(&mut self) -> Result<()> {
         let listener = TcpListener::bind(&self.cfg.listener)?;
         for stream in listener.incoming() {
-            match self.parse_inc_request(stream?) {
+            match self.parse_inc_request(stream?).await {
                 Ok(_) => break,
-                Err(_) => continue,
+                Err(e) => {
+                    println!("{e}");
+                    continue
+                },
             }
         }
         Ok(())
     }
 
-    fn parse_inc_request(&self, mut stream: TcpStream) -> Result<Option<()>> {
+    async fn parse_inc_request(&mut self, mut stream: TcpStream) -> Result<Option<()>> {
         let mut reader = BufReader::new(stream.try_clone()?);
 
         let mut array_of_bytes = [0; 1024];
@@ -70,27 +80,11 @@ impl TwitchAuthProcess {
             bail!("While parsing request: Unclear HTTP request.")
         }
 
-        // assuming the code param is first
-        let first_param: String = first_line[1]
-            .chars()
-            .skip_while(|c| *c != '?')
-            .skip(1)
-            .take_while(|c| *c != '&')
-            .collect();
-        let first_param: Vec<&str> = first_param.split('=').collect();
+        let url = first_line[1];
+        let parameters = helpers::extract_parameters(url);
 
         let response: String;
-        let mut token_received = false;
-        if first_param[0] != "code" {
-            response = format!(
-                "HTTP/1.1 200 OK\r\n\r\n<html>
-            <body>
-            <h1>No code parameter found in URL!</h1>
-            </body>
-            </html>"
-            );
-        } else {
-            let auth_code = first_param[1];
+        if let Some(auth_code) = parameters.get("code") {
             response = format!(
                 "HTTP/1.1 200 OK\r\n\r\n<html>
             <body>
@@ -98,19 +92,27 @@ impl TwitchAuthProcess {
             </body>
             </html>"
             );
-            token_received = self.get_tokens_with_code(auth_code.to_string()).is_some();
+        
+            // check state
+            let Some(received_state) = parameters.get("state") else { bail!("state wasn't returned") };
+            if *received_state != self.state { bail!("returned state is wrong") };
+
+            let tokens_txt = self.get_tokens_with_code(auth_code.to_string()).await?;
+            let _ = std::fs::create_dir("./tokens");
+            std::fs::write(&self.tokens_path, tokens_txt.as_bytes())?;
+        } else if let Some(e) = parameters.get("error") {
+            bail!("{e}");
+        }
+        else {
+            bail!("shit request");
         }
 
         let _ = stream.write(response.as_bytes());
-        if token_received {
-            return Ok(Some(()));
-        }
 
         Ok(None)
     }
 
-    fn get_tokens_with_code(&self, code: String) -> Option<()> {
-        let client = reqwest::blocking::Client::new();
+    async fn get_tokens_with_code(&mut self, code: String) -> Result<String> {
         let params = [
             ("client_id", &self.cfg.client_id),
             ("client_secret", &self.cfg.client_secret),
@@ -118,26 +120,23 @@ impl TwitchAuthProcess {
             ("grant_type", &"authorization_code".to_string()),
             ("redirect_uri", &self.cfg.redirect_uri),
         ];
-        let response = client
+        let response = self.http_client
             .post(TWITCH_TOKEN_URL)
             .header(CONTENT_TYPE, "x-www-form-urlencoded")
             .form(&params)
-            .send();
+            .send().await;
 
         match response {
             Ok(res) => {
                 let status_code = res.status().as_u16();
                 if status_code != 200 {
-                    return None;
+                    println!("{code}");
+                    bail!("No tokens dumbass: {}", res.text().await?);
                 }
 
-                let response_txt = res.text().ok()?;
-                std::fs::create_dir("/tokens").ok();
-                std::fs::write(&self.tokens_path, response_txt.as_bytes()).ok()?;
-
-                return Some(());
+                return Ok(res.text().await?);
             }
-            Err(_) => return None,
+            Err(e) => bail!("{e}"),
         };
     }
 }

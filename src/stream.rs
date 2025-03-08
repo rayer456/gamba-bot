@@ -33,14 +33,13 @@ impl Stream {
 
     pub fn read_irc(&mut self) -> Result<Vec<Message>> {
         let mut irc_batch = String::new();
-        let _ = self.current_stream.read_to_string(&mut irc_batch);
+        self.current_stream.read_to_string(&mut irc_batch)?;
         
         Ok(self.handle_irc_messages(&irc_batch))
     }
 
     fn handle_irc_messages(&mut self, irc_batch: &String) -> Vec<Message> {
         // every message is separated by \r\n
-
         let mut messages: Vec<Message> = Vec::new();
         let raw_messages: Vec<&str> = irc_batch.split("\r\n").collect();
 
