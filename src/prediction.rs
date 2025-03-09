@@ -1,23 +1,23 @@
 use serde::{Deserialize, Serialize};
 
 pub enum PredictionVariant { // PredictionCommandVariant
-    START,
-    LOCK,
-    OUTCOME,
-    CANCEL,
-    INVALID,
+    Start,
+    Lock,
+    Outcome,
+    Cancel,
+    Invalid,
 }
 
 impl From<&str> for PredictionVariant {
     fn from(pred_variant: &str) -> Self {
         match pred_variant.to_uppercase().as_str() {
-            "START" => PredictionVariant::START,
-            "LOCK" => PredictionVariant::LOCK,
-            "OUTCOME" => PredictionVariant::OUTCOME,
-            "CANCEL" => PredictionVariant::CANCEL,
+            "START" => PredictionVariant::Start,
+            "LOCK" => PredictionVariant::Lock,
+            "OUTCOME" => PredictionVariant::Outcome,
+            "CANCEL" => PredictionVariant::Cancel,
             _ => {
                 // log this
-                return PredictionVariant::INVALID
+                return PredictionVariant::Invalid
             },
         }
     }
