@@ -33,7 +33,7 @@ impl Stream {
 
     pub fn read_irc(&mut self) -> Result<Vec<Message>> {
         let mut irc_batch = String::new();
-        self.current_stream.read_to_string(&mut irc_batch)?;
+        let _ = self.current_stream.read_to_string(&mut irc_batch);
         
         Ok(self.handle_irc_messages(&irc_batch))
     }

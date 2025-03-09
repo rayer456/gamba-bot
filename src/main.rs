@@ -6,7 +6,9 @@ mod authorize;
 mod stream;
 mod token;
 mod helpers;
-
+mod prediction;
+mod twitch;
+mod signal;
 
 use std::{backtrace, env, time::Duration};
 
@@ -20,11 +22,11 @@ pub const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";
 #[tokio::main]
 async fn main() -> Result<()> {
     // Authorize first
-    env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_BACKTRACE", "0");
     let config = config::Config::build("settings.toml")?;
     let mut auth_process = authorize::TwitchAuthProcess::create(&config.twitch_cfg);
 
-    let yes_authorize = true;
+    let yes_authorize = false;
     if yes_authorize {
         match auth_process.authorize_account(&config.twitch_cfg.stream_token_path, &config.twitch_cfg.stream_scope).await {
             Ok(_) => println!("Successfully authorized Streamer\n"),
@@ -39,9 +41,7 @@ async fn main() -> Result<()> {
     // Run bot
     println!("Starting bot...");
     let mut bot = Bot::initialize().await?;
-    spawn(async move {
-        let _ = bot.run().await;
-    });
+    bot.run().await;
 
     Ok(())
 }

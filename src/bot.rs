@@ -1,13 +1,17 @@
+use std::env::Args;
 use std::fmt::Display;
 
-// use std::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
+
 use std::thread::{self};
 
 use crate::command::{self, AppError, Command};
 use crate::config::Config;
 use crate::message::User;
+use crate::prediction::{self, PredictionVariant};
+use crate::signal::BotSignal;
 use crate::token::Token;
+use crate::twitch::{self, TwitchApiClient};
 use crate::{message::Message, stream::Stream};
 
 use anyhow::{bail, Result};
@@ -16,6 +20,8 @@ use rand::Rng;
 use reqwest::header::AUTHORIZATION;
 use serde_json::Value;
 use futures::join;
+use tokio::spawn;
+use tokio::sync::mpsc::Sender as TokioSender;
 
 const USERS_URL: &'static str = "https://api.twitch.tv/helix/users";
 
@@ -25,6 +31,10 @@ pub struct Bot {
     pub bot_token: Token,
     pub stream_token: Token,
     pub active_commands: Vec<Command>,
+    pub sender: Sender<Result<String, AppError>>,
+    pub receiver: Receiver<Result<String, AppError>>,
+
+    pub tx_to_api_client: TokioSender<BotSignal>
 }
 
 impl Bot {
@@ -43,13 +53,28 @@ impl Bot {
             )
         );
 
+        let (sender, receiver) = mpsc::channel();
+
+        // API channels
+        let (tx_to_api_client, rx_from_bot) = tokio::sync::mpsc::channel(32);
+
         let mut bot = Bot {
             irc_stream: irc_stream?,
             cfg: cfg.clone(),
             bot_token: bot_token?,
             stream_token: stream_token?,
             active_commands: active_commands?,
+            sender,
+            receiver,
+
+            tx_to_api_client,
         };
+
+        // Run the Twitch API client in a separate thread
+        let twitch_client = TwitchApiClient::new(rx_from_bot);
+        spawn(async move {
+            let _ = twitch::main_loop(twitch_client).await;
+        });
 
         if bot.cfg.twitch_cfg.broadcaster_id.is_empty() {
             bot.cfg.twitch_cfg.broadcaster_id = bot.get_broadcaster_id(&bot.cfg.twitch_cfg.channel.clone()).await?;
@@ -68,14 +93,14 @@ impl Bot {
 
     pub async fn run(&mut self) {
         // main loop
-        let (sender, mut receiver) = mpsc::channel(32); // TODO: These should be struct fields
+        // let (sender, mut receiver) = mpsc::channel();
         loop {
             // read irc stream
             match self.irc_stream.read_irc() {
                 Ok(messages) => {
                     for message in messages {
                         if let Some(command) = self.get_command_instance(message.clone()) {
-                            self.run_command(command, sender.clone()).await;
+                            self.run_command(command).await;
                         }
                     }
                 }
@@ -111,7 +136,7 @@ impl Bot {
             }
 
             // read the channel
-            self.read_channel(sender.clone(), &mut receiver).await;
+            self.read_channel().await;
 
             // hourly token validation
             self.stream_token.validate_if_invalid().await;
@@ -119,12 +144,8 @@ impl Bot {
         }
     }
 
-    async fn read_channel(
-        &mut self,
-        sender: Sender<Result<String, AppError>>,
-        receiver: &mut Receiver<Result<String, AppError>>,
-    ) {
-        if let Ok(res) = receiver.try_recv() {
+    async fn read_channel(&mut self) {
+        if let Ok(res) = self.receiver.try_recv() {
             match res {
                 Ok(reply) => self.chat(reply),
                 Err(err) => match err {
@@ -132,7 +153,7 @@ impl Bot {
                         cmd,
                         arguments,
                         requested_by,
-                    } => self.respond_to_invalid_token(sender, cmd, arguments, requested_by).await,
+                    } => self.respond_to_invalid_token(cmd, arguments, requested_by).await,
                     AppError::OtherError(err) => println!("{err}"),
                 },
             }
@@ -141,7 +162,6 @@ impl Bot {
 
     async fn respond_to_invalid_token(
         &mut self,
-        sender: Sender<Result<String, AppError>>,
         cmd: String,
         arguments: Vec<String>,
         requested_by: Option<User>,
@@ -158,7 +178,7 @@ impl Bot {
 
         command.arguments = arguments;
         command.requested_by = requested_by;
-        self.run_command(command, sender.clone()).await;
+        self.run_command(command).await;
     }
 
     pub fn get_command_instance(&mut self, mut message: Message) -> Option<Command> {
@@ -178,16 +198,16 @@ impl Bot {
         }
     }
 
-    pub async fn run_command(&mut self, command: Command, sender: Sender<Result<String, AppError>>) {
+    pub async fn run_command(&mut self, command: Command) {
         if let Some(response) = command.response.as_ref() {
             self.chat(response);
         }
 
         // Add command specific functionality here
         match command.cmd.as_str() {
-            
+            "pred" => self.prediction_router(command).await,
             _ => (), // Don't do any additional work for these commands, a response defined in commands.yaml was most likely already sent.
-        }
+        };
     }
 
     pub fn find_command_by_message(&mut self, msg: &Message) -> (Option<&mut Command>, Vec<String>) {
@@ -218,6 +238,7 @@ impl Bot {
         }
     }
 
+    // TODO: put this somewhere else
     pub async fn get_broadcaster_id(&mut self, channel: &String) -> Result<String> {
         // https://dev.twitch.tv/docs/api/reference/#get-users
 
@@ -249,5 +270,24 @@ impl Bot {
                 bail!("ERROR: Status code was {other} when trying to get the broadcaster ID, expected 200 or 401.")
             }
         }
+    }
+
+    async fn prediction_router(&mut self, command: Command) {
+        let Some(pred_variant) = command.arguments.first() else { return };
+        let pred_variant: PredictionVariant = pred_variant.as_str().into();
+        match pred_variant {
+            PredictionVariant::START => self.send_create_prediction_signal(command).await,
+            PredictionVariant::LOCK => self.chat("locking pred"),
+            PredictionVariant::OUTCOME => self.chat("choosing outcome"),
+            PredictionVariant::CANCEL => self.chat("cancelling pred"),
+            PredictionVariant::INVALID => self.chat("Possible arguments: start lock outcome cancel")
+        }
+    }
+
+    async fn send_create_prediction_signal(&mut self, command: Command) {
+        let _ = self.tx_to_api_client.send(BotSignal::CREATE_PREDICTION {
+            client_id: self.cfg.twitch_cfg.client_id.clone(),
+            access_token: self.stream_token.access_token.clone(),
+        }).await;
     }
 }

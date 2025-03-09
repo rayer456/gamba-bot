@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 
 use crate::message::{Group, Message, RecentUser, User};
 
-
 #[derive(Debug)]
 pub enum AppError {
     InvalidTokenError {
@@ -232,3 +231,4 @@ pub fn validate_and_return_command<'a>(
 
     Some(cmd)
 }
+
