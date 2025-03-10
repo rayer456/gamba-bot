@@ -166,6 +166,7 @@ impl Bot {
             if elapsed < Duration::from_secs(2) {
                 // Really bad
                 println!("ERROR: Stream token is being refreshed way too soon, 401's are being returned for a different reason.")
+                return;
             }
         }
 
