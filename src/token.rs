@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use serde::Deserialize;
-use std::time::{Duration, SystemTime};
+use serde::{Deserialize, Deserializer};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::{config::Config, TOKEN_ENDPOINT};
 
@@ -13,7 +13,7 @@ pub struct Token {
     pub access_token: String,
     refresh_token: String,
 
-    #[serde(default)]
+    #[serde(skip)]
     config: Config,
 
     #[serde(skip)]
@@ -21,6 +21,9 @@ pub struct Token {
 
     #[serde(skip, default = "SystemTime::now")]
     last_validated: SystemTime,
+
+    #[serde(skip)]
+    pub last_refreshed: Option<Instant>,
 }
 
 impl Token {
@@ -59,6 +62,8 @@ impl Token {
                 if status_code != 200 {
                     bail!("ERROR: Refreshing tokens:\nStatus code: {status_code}\nReason:{response}")
                 }
+
+                self.last_refreshed = Some(Instant::now());
                 println!("refreshed.");
 
                 // Write response to file
@@ -105,4 +110,9 @@ impl Token {
             }
         }
     }
+
+    pub fn last_refresh_elapsed(&self) -> Option<Duration> {
+        self.last_refreshed.map(|instant| instant.elapsed())
+    }
 }
+

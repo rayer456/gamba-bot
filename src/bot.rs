@@ -1,14 +1,14 @@
-use std::env::Args;
 use std::fmt::Display;
 
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use std::thread::{self};
+use std::time::Duration;
 
-use crate::command::{self, AppError, Command};
+use crate::command::{self, Command};
 use crate::config::Config;
 use crate::message::User;
-use crate::prediction::{self, PredictionVariant};
+use crate::prediction::{self, Prediction, PredictionVariant};
 use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchApiClient};
@@ -31,8 +31,7 @@ pub struct Bot {
     pub bot_token: Token,
     pub stream_token: Token,
     pub active_commands: Vec<Command>,
-    pub sender: Sender<Result<String, AppError>>,
-    pub receiver: Receiver<Result<String, AppError>>,
+    pub loaded_predictions: Vec<Prediction>,
 
     pub tx_to_api_client: TokioSender<BotSignal>,
     pub rx_from_api_client: TokioReceiver<TwitchApiSignal>,
@@ -43,18 +42,17 @@ impl Bot {
         let cfg = Config::build("settings.toml")?;
 
         // async
-        let (bot_token, stream_token, active_commands, irc_stream) = join!(
+        let (bot_token, stream_token, active_commands, predictions, irc_stream) = join!(
             Token::from_file(cfg.twitch_cfg.bot_token_path.clone(), cfg.clone()),
             Token::from_file(cfg.twitch_cfg.stream_token_path.clone(), cfg.clone()),
             command::get_commands(),
+            prediction::get_predictions(),
             Stream::new(
                 &cfg.twitch_cfg.irc_host,
                 &cfg.twitch_cfg.irc_port,
                 cfg.twitch_cfg.channel.clone(),
             )
         );
-
-        let (sender, receiver) = mpsc::channel();
 
         // API channels
         let (tx_to_api_client, rx_from_bot) = tokio::sync::mpsc::channel(32);
@@ -72,8 +70,7 @@ impl Bot {
             bot_token: bot_token?,
             stream_token: stream_token?,
             active_commands: active_commands?,
-            sender,
-            receiver,
+            loaded_predictions: predictions?,
 
             tx_to_api_client,
             rx_from_api_client,
@@ -150,45 +147,34 @@ impl Bot {
     }
 
     async fn read_channels(&mut self) {
-        if let Ok(res) = self.receiver.try_recv() {
-            match res {
-                Ok(reply) => self.chat(reply),
-                Err(err) => match err {
-                    AppError::InvalidTokenError {
-                        cmd,
-                        arguments,
-                        requested_by,
-                    } => self.respond_to_invalid_token(cmd, arguments, requested_by).await,
-                    AppError::OtherError(err) => println!("{err}"),
-                },
-            }
-        }
-
         if let Ok(signal) = self.rx_from_api_client.try_recv() {
             match signal {
+                TwitchApiSignal::Unauthorized { command, reason } => self.respond_to_invalid_token(command, reason).await,
+                TwitchApiSignal::BadRequest(reason) => println!("ERROR: 400 Bad Request: {reason}"),
+                TwitchApiSignal::TooManyRequests => println!("ERROR: Too many requests lol"),
+                TwitchApiSignal::Unknown { status, text }=> println!("ERROR: unknown response: {status}: {text}"),
+
+                TwitchApiSignal::PredictionCreated => println!("INFO: created prediction via API"),
 
             }
         }
     }
 
-    async fn respond_to_invalid_token(
-        &mut self,
-        cmd: String,
-        arguments: Vec<String>,
-        requested_by: Option<User>,
-    ) {
+    async fn respond_to_invalid_token(&mut self, command: Command, reason: String) {
+        // TODO: Might be used for non command API calls too, will need to support other options than just a command
+        if let Some(elapsed) = self.stream_token.last_refresh_elapsed() {
+            if elapsed < Duration::from_secs(2) {
+                // Really bad
+                println!("ERROR: Stream token is being refreshed way too soon, 401's are being returned for a different reason.")
+            }
+        }
+
+        println!("INFO: Token was likely invalid, refreshing. Reason: {reason}");
         if self.stream_token.refresh().await.is_err() {
             eprintln!("ERROR: Failed to refresh token. Won't attempt again.");
             return;
         }
-        // No need to call get_command_instance() since the command failed the first time, thus was never executed in case of an InvalidTokenError
-        let mut command = match self.find_command_by_cmd(cmd) {
-            Some(cmd) => cmd,
-            None => return, // Shouldn't be possible since the given command was already activated once. 
-        };
 
-        command.arguments = arguments;
-        command.requested_by = requested_by;
         self.run_command(command).await;
     }
 
@@ -283,11 +269,14 @@ impl Bot {
         }
     }
 
+    //// TODO: Think of moving the prediction functions outside of bot? client_id is static, access_token can be send via channel...
+
     async fn prediction_router(&mut self, command: Command) {
         let Some(pred_variant) = command.arguments.first() else { return };
         let pred_variant: PredictionVariant = pred_variant.as_str().into();
+        let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
         match pred_variant {
-            PredictionVariant::Start => self.send_create_prediction_signal(command).await,
+            PredictionVariant::Start => self.send_create_prediction_signal(command, sub_argument).await,
             PredictionVariant::Lock => self.chat("locking pred"),
             PredictionVariant::Outcome => self.chat("choosing outcome"),
             PredictionVariant::Cancel => self.chat("cancelling pred"),
@@ -295,12 +284,19 @@ impl Bot {
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command) {
+    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String) {
+        if !prediction::prediction_name_exists(&self.loaded_predictions, &prediction_name) {
+            let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
+            self.chat(format!("Prediction {prediction_name} not found. Available predictions: {preds_str}"));
+            return;
+        }
 
+        let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { return };
         let _ = self.tx_to_api_client.send(BotSignal::CreatePrediction {
             client_id: self.cfg.twitch_cfg.client_id.clone(),
             access_token: self.stream_token.access_token.clone(),
             command,
+            prediction: prediction.clone(),
         }).await;
     }
 }

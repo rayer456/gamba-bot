@@ -27,15 +27,15 @@ impl TwitchApiClient {
     async fn read_channels(&mut self) {
         if let Ok(signal) = self.rx_from_bot.try_recv() {
             match signal {
-                BotSignal::CreatePrediction { client_id, access_token, command } => self.create_prediction(client_id, access_token, command),
+                BotSignal::CreatePrediction { client_id, access_token, command, prediction} => self.create_prediction(client_id, access_token, command, prediction),
             };
         }
     }
 
-    fn create_prediction(&mut self, client_id: String, access_token: String, command: Command) {
+    fn create_prediction(&mut self, client_id: String, access_token: String, command: Command, prediction: Prediction) {
         let client = self.client.clone();
         let tx_to_bot_c = self.tx_to_bot.clone();
-        spawn(create_prediction(client, client_id, access_token, tx_to_bot_c, command));
+        spawn(create_prediction(client, client_id, access_token, tx_to_bot_c, command, prediction));
     }
 
 }
@@ -52,27 +52,18 @@ pub async fn create_prediction(
     client_id: String, 
     access_token: String, 
     tx_to_bot: TokioSender<TwitchApiSignal>,
-    command: Command) {
-
-    // TODO: Testing: move this prediction search functionality to bot.rs
-    let Ok(contents) = fs::read_to_string("predictions.json") else {
-        println!("file not found");
-        return;
-    };
-    let predictions: Vec<Prediction> = serde_json::from_str(&contents).unwrap();
-    let mut chosen = predictions.iter().nth(0).unwrap().to_owned();
-
-    // TODO: take as argument
-    chosen.data_for_twitch.broadcaster_id = "105842308".to_string();
+    command: Command,
+    mut prediction: Prediction) {
 
 
+    prediction.data_for_twitch.broadcaster_id = "105842308".to_string();
 
     // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let response = api_client
         .post(PREDICTIONS_URL)
         .header(AUTHORIZATION, format!("Bearer {}", access_token))
         .header("client-id", &client_id)
-        .json(&chosen.data_for_twitch)
+        .json(&prediction.data_for_twitch)
         .send().await;
 
     let res = response.unwrap();
@@ -82,23 +73,24 @@ pub async fn create_prediction(
     match status {
         400 => {
             println!("400: Failed to create prediction: {text}");
-            tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
+            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
         }
         401 => {
             println!("401: Failed to create prediction: {text}");
-            tx_to_bot.send(TwitchApiSignal::Unauthorized {
-                cmd: command.cmd,
-                arguments: command.arguments,
-                requested_by: command.requested_by,
+            let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
+                command: command,
                 reason: text,
             }).await;
         }
         200 => {
             println!("Created prediction successfully");
-            tx_to_bot.send(TwitchApiSignal::PredictionCreated).await;
+            let _ = tx_to_bot.send(TwitchApiSignal::PredictionCreated).await;
         }
         429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
-        _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown).await),
+        _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown {
+            status,
+            text,
+        }).await),
     };
 }
 

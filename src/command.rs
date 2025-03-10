@@ -8,46 +8,6 @@ use std::time::{Duration, SystemTime};
 
 use crate::message::{Group, Message, RecentUser, User};
 
-#[derive(Debug)]
-pub enum AppError {
-    InvalidTokenError {
-        cmd: String,
-        arguments: Vec<String>,
-        requested_by: Option<User>,
-    },
-    OtherError(String),
-}
-
-impl Display for AppError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AppError::InvalidTokenError { .. } => write!(f, "invalid token"),
-            AppError::OtherError(e) => write!(f, "other error: {e}"),
-        }
-    }
-}
-
-impl From<String> for AppError {
-    fn from(cmd: String) -> Self {
-        AppError::InvalidTokenError {
-            cmd,
-            arguments: vec![],
-            requested_by: None,
-        }
-    }
-}
-
-impl From<reqwest::Error> for AppError {
-    fn from(value: reqwest::Error) -> Self {
-        AppError::OtherError(value.to_string())
-    }
-}
-
-impl From<serde_json::Error> for AppError {
-    fn from(value: serde_json::Error) -> Self {
-        AppError::OtherError(value.to_string())
-    }
-}
 
 #[derive(Clone, PartialEq, Deserialize, Debug)]
 pub struct Command {
