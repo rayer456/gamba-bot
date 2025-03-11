@@ -1,8 +1,9 @@
 use std::{
-    fmt::Display, io::{Read, Write}, net::TcpStream, time::Duration
+    fmt::Display, io::{Read, Write}, net::TcpStream, os::raw, time::Duration
 };
 
 use anyhow::{bail, Result};
+use tokio::io::split;
 
 use crate::message::{self, User};
 use message::Message;
@@ -44,6 +45,8 @@ impl Stream {
         let raw_messages: Vec<&str> = irc_batch.split("\r\n").collect();
 
         for raw_message in raw_messages {
+            if raw_message.is_empty() { continue };
+            
             let split_message: Vec<&str> = raw_message.split(' ').collect();
             let irc_message_type: IrcMessageType = (&split_message).into();
             match irc_message_type {
@@ -100,7 +103,21 @@ fn is_message_userstate(split_message: &Vec<&str>) -> bool {
     }
 }
 
+fn remove_flags_tag(raw_message: &str) -> String {
+    // this only gets rid of the first instance of ;flags=;
+    // so don't make ;flags= a command :)
+    raw_message
+        .split(';')
+        .filter(|part| !part.starts_with("flags="))
+        .collect::<Vec<&str>>()
+        .join(";")
+        .to_string()
+} 
+
 fn parse_privmsg_to_message(raw_message: &str) -> Message {
+    let binding = remove_flags_tag(raw_message);
+    let raw_message = binding.as_str();
+
     let username: String = raw_message
         .chars()
         .skip_while(|c| *c != ':')

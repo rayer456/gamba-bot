@@ -165,7 +165,7 @@ impl Bot {
         if let Some(elapsed) = self.stream_token.last_refresh_elapsed() {
             if elapsed < Duration::from_secs(2) {
                 // Really bad
-                println!("ERROR: Stream token is being refreshed way too soon, 401's are being returned for a different reason.")
+                println!("ERROR: Stream token is being refreshed way too soon, 401's are being returned for a different reason.");
                 return;
             }
         }
@@ -281,6 +281,7 @@ impl Bot {
             PredictionVariant::Lock => self.chat("locking pred"),
             PredictionVariant::Outcome => self.chat("choosing outcome"),
             PredictionVariant::Cancel => self.chat("cancelling pred"),
+
             PredictionVariant::Invalid => self.chat("Possible arguments: start lock outcome cancel")
         }
     }
