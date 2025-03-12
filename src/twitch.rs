@@ -1,4 +1,4 @@
-use std::{fs, time::Duration};
+use std::{collections::HashMap, fs, time::Duration};
 
 use reqwest::{header::AUTHORIZATION, Client};
 use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
@@ -60,10 +60,101 @@ impl TwitchApiClient {
         spawn(lock_prediction(client, common_paras, tx_to_bot_c, command));
     }
 
+    fn get_latest_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command) {
+        let client = self.client.clone();
+        let tx_to_bot_c = self.tx_to_bot.clone();
+        spawn(get_latest_prediction(client, common_paras, tx_to_bot_c, command));
+    }
+
 }
 
-pub async fn lock_prediction(common_paras: TwitchCommonParameters, command: Command) {
-    // Implement locking function
+pub async fn get_latest_prediction(
+    api_client: Client, 
+    common_paras: TwitchCommonParameters,
+    tx_to_bot: TokioSender<TwitchApiSignal>,
+    command: Command) {
+
+
+    // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
+    let mut params = HashMap::new();
+    params.insert("broadcaster_id", common_paras.broadcaster_id.as_str());
+    params.insert("first", "1");
+    let response = api_client
+        .get(PREDICTIONS_URL)
+        .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
+        .header("client-id", common_paras.client_id)
+        .query(&params)
+        .send().await;
+
+    let res = response.unwrap();
+    let status = res.status().as_u16();
+    let text = res.text().await.unwrap();
+    
+    match status {
+        400 => {
+            println!("400: Failed to get prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
+        }
+        401 => {
+            println!("401: Failed to create prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
+                command,
+                reason: text,
+            }).await;
+        }
+        200 => {
+            println!("Retrieved prediction successfully");
+            let _ = tx_to_bot.send(TwitchApiSignal::GotLatestPrediction).await; // Add custom Prediction type FROM Twitch (check api docs)
+        }
+        429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
+        _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown {
+            status,
+            text,
+        }).await),
+    };
+}
+
+pub async fn lock_prediction(
+    api_client: Client, 
+    common_paras: TwitchCommonParameters,
+    tx_to_bot: TokioSender<TwitchApiSignal>,
+    command: Command) {
+
+
+    // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
+    let response = api_client
+        .post(PREDICTIONS_URL)
+        .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
+        .header("client-id", common_paras.client_id)
+        .json(&prediction.data_for_twitch)
+        .send().await;
+
+    let res = response.unwrap();
+    let status = res.status().as_u16();
+    let text = res.text().await.unwrap();
+    
+    match status {
+        400 => {
+            println!("400: Failed to create prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
+        }
+        401 => {
+            println!("401: Failed to create prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
+                command,
+                reason: text,
+            }).await;
+        }
+        200 => {
+            println!("Created prediction successfully");
+            let _ = tx_to_bot.send(TwitchApiSignal::PredictionCreated).await;
+        }
+        429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
+        _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown {
+            status,
+            text,
+        }).await),
+    };
 }
 
 pub async fn create_prediction(

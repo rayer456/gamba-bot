@@ -35,7 +35,7 @@ pub struct Bot {
 
     pub twitch_client: TwitchApiClient,
     // pub tx_to_api_client: TokioSender<BotSignal>,
-    pub rx_from_api_client: TokioReceiver<TwitchApiSignal>,
+    pub rx_from_api_client: TokioReceiver<TwitchApiSignal>, // TODO: doesn't need to be tokioreceiver
 }
 
 impl Bot {
@@ -322,6 +322,9 @@ impl Bot {
     }
 
     async fn send_lock_prediction_signal(&mut self, command: Command, common_paras: CommonTwitchParameters) {
-        let _  = self.twitch_client.send_signal(BotSignal::LockPrediction(common_paras, command));
+        let _  = self.twitch_client.send_signal(BotSignal::LockPrediction{ 
+            common_paras, 
+            command,
+        });
     }
 }
