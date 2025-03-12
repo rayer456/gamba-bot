@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
+#[derive(PartialEq)]
 pub enum PredictionVariant { // PredictionCommandVariant
     Start,
     Lock,

@@ -11,7 +11,7 @@ use crate::message::User;
 use crate::prediction::{self, Prediction, PredictionVariant};
 use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
-use crate::twitch::{self, TwitchApiClient};
+use crate::twitch::{self, CommonTwitchParameters, TwitchApiClient};
 use crate::{message::Message, stream::Stream};
 
 use anyhow::{bail, Result};
@@ -33,7 +33,8 @@ pub struct Bot {
     pub active_commands: Vec<Command>,
     pub loaded_predictions: Vec<Prediction>,
 
-    pub tx_to_api_client: TokioSender<BotSignal>,
+    pub twitch_client: TwitchApiClient,
+    // pub tx_to_api_client: TokioSender<BotSignal>,
     pub rx_from_api_client: TokioReceiver<TwitchApiSignal>,
 }
 
@@ -55,14 +56,14 @@ impl Bot {
         );
 
         // API channels
-        let (tx_to_api_client, rx_from_bot) = tokio::sync::mpsc::channel(32);
+        let (_, rx_from_bot) = tokio::sync::mpsc::channel(32);
         let (tx_to_bot, rx_from_api_client) = tokio::sync::mpsc::channel(32);
 
-        // Run the Twitch API client in a separate thread
+        // TODO: Why run this in a separate thread????
+        // Just run it in the same thread and call a function of this client that will
+        // run a request async, don't even need BotSignal anymore
         let twitch_client = TwitchApiClient::new(rx_from_bot, tx_to_bot);
-        spawn(async move {
-            let _ = twitch::main_loop(twitch_client).await;
-        });
+        
 
         let mut bot = Bot {
             irc_stream: irc_stream?,
@@ -72,12 +73,13 @@ impl Bot {
             active_commands: active_commands?,
             loaded_predictions: predictions?,
 
-            tx_to_api_client,
+            twitch_client,
+            // tx_to_api_client,
             rx_from_api_client,
         };
 
         
-
+        // TODO: remove this empty check in production, b_id could be wrong in config file
         if bot.cfg.twitch_cfg.broadcaster_id.is_empty() {
             bot.cfg.twitch_cfg.broadcaster_id = bot.get_broadcaster_id(&bot.cfg.twitch_cfg.channel.clone()).await?;
             bot.cfg.update_file()?;
@@ -91,6 +93,7 @@ impl Bot {
             Ok(_) => return Ok(bot),
             Err(e) => bail!(e),
         }
+
     }
 
     pub async fn run(&mut self) {
@@ -262,7 +265,7 @@ impl Bot {
             }
             401 => {
                 self.stream_token.refresh().await?;
-                return Box::pin(self.get_broadcaster_id(channel)).await;
+                return Box::pin(self.get_broadcaster_id(channel)).await; // Dangerous!
             }
             other => {
                 bail!("ERROR: Status code was {other} when trying to get the broadcaster ID, expected 200 or 401.")
@@ -270,23 +273,40 @@ impl Bot {
         }
     }
 
+
     //// TODO: Think of moving the prediction functions outside of bot? client_id is static, access_token can be send via channel...
+    
+    fn get_common_twitch_parameters(&self) -> CommonTwitchParameters {
+        CommonTwitchParameters::new(
+            self.cfg.twitch_cfg.client_id.clone(),
+            self.stream_token.access_token.clone(),
+            self.cfg.twitch_cfg.broadcaster_id.clone(),
+        )
+    }
 
     async fn prediction_router(&mut self, command: Command) {
         let Some(pred_variant) = command.arguments.first() else { return };
         let pred_variant: PredictionVariant = pred_variant.as_str().into();
-        let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
-        match pred_variant {
-            PredictionVariant::Start => self.send_create_prediction_signal(command, sub_argument).await,
-            PredictionVariant::Lock => self.chat("locking pred"),
-            PredictionVariant::Outcome => self.chat("choosing outcome"),
-            PredictionVariant::Cancel => self.chat("cancelling pred"),
+        if pred_variant == PredictionVariant::Invalid {
+            self.chat("Possible arguments: start lock outcome cancel");
+            return;
+        }
 
-            PredictionVariant::Invalid => self.chat("Possible arguments: start lock outcome cancel")
+        let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
+        let common_paras = self.get_common_twitch_parameters(); 
+        match pred_variant {
+            PredictionVariant::Start => self.send_create_prediction_signal(command, sub_argument, common_paras).await,
+            PredictionVariant::Lock => self.send_lock_prediction_signal(command, common_paras).await,
+            PredictionVariant::Outcome => self.send_outcome_prediction_signal(command, sub_argument, common_paras).await,
+            PredictionVariant::Cancel => self.send_cancel_prediction_signal(command, common_paras).await,
+
+            _ => ()
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String) {
+    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String, common_paras: CommonTwitchParameters) {
+
+        // TODO: remove prediction_name_exists and just search by name and return an option
         if !prediction::prediction_name_exists(&self.loaded_predictions, &prediction_name) {
             let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
             self.chat(format!("Prediction {prediction_name} not found. Available predictions: {preds_str}"));
@@ -294,11 +314,14 @@ impl Bot {
         }
 
         let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { return };
-        let _ = self.tx_to_api_client.send(BotSignal::CreatePrediction {
-            client_id: self.cfg.twitch_cfg.client_id.clone(),
-            access_token: self.stream_token.access_token.clone(),
+        let _ = self.twitch_client.send_signal(BotSignal::CreatePrediction {
+            common_paras,
             command,
             prediction: prediction.clone(),
-        }).await;
+        });
+    }
+
+    async fn send_lock_prediction_signal(&mut self, command: Command, common_paras: CommonTwitchParameters) {
+        let _  = self.twitch_client.send_signal(BotSignal::LockPrediction(common_paras, command));
     }
 }

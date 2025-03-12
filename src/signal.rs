@@ -1,12 +1,15 @@
-use crate::{command::Command, message::User, prediction::Prediction};
+use crate::{command::Command, message::User, prediction::Prediction, twitch::TwitchCommonParameters};
 
 pub enum BotSignal {
     CreatePrediction {
-        client_id: String,
-        access_token: String,
+        common_paras: TwitchCommonParameters,
         command: Command,
         prediction: Prediction,
     },
+    LockPrediction {
+        common_paras: TwitchCommonParameters,
+        command: Command,
+    }
 }
 
 pub enum TwitchApiSignal {
