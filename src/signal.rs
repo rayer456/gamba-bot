@@ -6,10 +6,20 @@ pub enum BotSignal {
         command: Command,
         prediction: Prediction,
     },
-    LockPrediction {
+    EndPrediction {
         common_paras: TwitchCommonParameters,
         command: Command,
+        status: PredictionStatus,
+        id: String,
     }
+}
+
+pub enum PredictionStatus {
+    Resolved {
+        winning_outcome_id: String
+    },
+    Canceled,
+    Locked,
 }
 
 pub enum TwitchApiSignal {

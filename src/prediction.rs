@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq)]
-pub enum PredictionVariant { // PredictionCommandVariant
+pub enum PredictionCommandVariant { // kinda shit name
     Start,
     Lock,
     Outcome,
@@ -10,19 +10,24 @@ pub enum PredictionVariant { // PredictionCommandVariant
     Invalid,
 }
 
-impl From<&str> for PredictionVariant {
+impl From<&str> for PredictionCommandVariant {
     fn from(pred_variant: &str) -> Self {
         match pred_variant.to_uppercase().as_str() {
-            "START" => PredictionVariant::Start,
-            "LOCK" => PredictionVariant::Lock,
-            "OUTCOME" => PredictionVariant::Outcome,
-            "CANCEL" => PredictionVariant::Cancel,
+            "START" => PredictionCommandVariant::Start,
+            "LOCK" => PredictionCommandVariant::Lock,
+            "OUTCOME" => PredictionCommandVariant::Outcome,
+            "CANCEL" => PredictionCommandVariant::Cancel,
             _ => {
                 // log this
-                return PredictionVariant::Invalid
+                return PredictionCommandVariant::Invalid
             },
         }
     }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct PredictionResponse {
+    
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]

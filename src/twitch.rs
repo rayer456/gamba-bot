@@ -1,9 +1,12 @@
 use std::{collections::HashMap, fs, time::Duration};
 
+use anyhow::{bail, Result};
 use reqwest::{header::AUTHORIZATION, Client};
+use serde_json::Value;
 use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
 
 use crate::{command::Command, prediction::{self, Prediction}, signal::{BotSignal, TwitchApiSignal}};
+use crate::signal::PredictionStatus;
 
 const PREDICTIONS_URL: &'static str = "https://api.twitch.tv/helix/predictions";
 
@@ -44,7 +47,9 @@ impl TwitchApiClient {
     pub fn send_signal(&mut self, bot_signal: BotSignal) {
         match signal {
             BotSignal::CreatePrediction { common_paras, command, prediction} => self.create_prediction(common_paras, command, prediction),
-            BotSignal::LockPrediction { common_paras, command } => self.lock_prediction(common_paras, command)
+            BotSignal::EndPrediction { common_paras, command, status, id } => {
+                self.lock_prediction(common_paras, command);
+            }
         };
     }
 
@@ -60,10 +65,14 @@ impl TwitchApiClient {
         spawn(lock_prediction(client, common_paras, tx_to_bot_c, command));
     }
 
-    fn get_latest_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command) {
+    pub async fn get_latest_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command) -> Result<String> {
         let client = self.client.clone();
         let tx_to_bot_c = self.tx_to_bot.clone();
-        spawn(get_latest_prediction(client, common_paras, tx_to_bot_c, command));
+        
+        let handle = spawn(get_latest_prediction(client, common_paras, tx_to_bot_c, command));
+        let res = handle.await.unwrap();
+
+        res
     }
 
 }
@@ -72,7 +81,7 @@ pub async fn get_latest_prediction(
     api_client: Client, 
     common_paras: TwitchCommonParameters,
     tx_to_bot: TokioSender<TwitchApiSignal>,
-    command: Command) {
+    command: Command) -> Result<String> {
 
 
     // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
@@ -104,7 +113,8 @@ pub async fn get_latest_prediction(
         }
         200 => {
             println!("Retrieved prediction successfully");
-            let _ = tx_to_bot.send(TwitchApiSignal::GotLatestPrediction).await; // Add custom Prediction type FROM Twitch (check api docs)
+            return Ok(text);
+            // let _ = tx_to_bot.send(TwitchApiSignal::GotLatestPrediction).await; // Just use serde Value
         }
         429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
         _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown {
@@ -112,6 +122,8 @@ pub async fn get_latest_prediction(
             text,
         }).await),
     };
+
+    bail!("Failed request via latest_prediction(), consult other logs for reason");
 }
 
 pub async fn lock_prediction(
@@ -120,10 +132,10 @@ pub async fn lock_prediction(
     tx_to_bot: TokioSender<TwitchApiSignal>,
     command: Command) {
 
-
+    
     // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let response = api_client
-        .post(PREDICTIONS_URL)
+        .patch(PREDICTIONS_URL)
         .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
         .header("client-id", common_paras.client_id)
         .json(&prediction.data_for_twitch)

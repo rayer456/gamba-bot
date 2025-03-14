@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use std::process::exit;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use std::thread::{self};
@@ -8,7 +9,7 @@ use std::time::Duration;
 use crate::command::{self, Command};
 use crate::config::Config;
 use crate::message::User;
-use crate::prediction::{self, Prediction, PredictionVariant};
+use crate::prediction::{self, Prediction, PredictionCommandVariant as PredCmd};
 use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, CommonTwitchParameters, TwitchApiClient};
@@ -286,19 +287,26 @@ impl Bot {
 
     async fn prediction_router(&mut self, command: Command) {
         let Some(pred_variant) = command.arguments.first() else { return };
-        let pred_variant: PredictionVariant = pred_variant.as_str().into();
-        if pred_variant == PredictionVariant::Invalid {
+        let pred_variant: PredCmd = pred_variant.as_str().into();
+        if pred_variant == PredCmd::Invalid {
             self.chat("Possible arguments: start lock outcome cancel");
             return;
         }
 
         let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
         let common_paras = self.get_common_twitch_parameters(); 
+
+        // Testing: Parse this into an object
+        if let Ok(latest_pred_str) = self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await {
+            println!("{latest_pred_str}");
+            exit(1);
+        }
+
         match pred_variant {
-            PredictionVariant::Start => self.send_create_prediction_signal(command, sub_argument, common_paras).await,
-            PredictionVariant::Lock => self.send_lock_prediction_signal(command, common_paras).await,
-            PredictionVariant::Outcome => self.send_outcome_prediction_signal(command, sub_argument, common_paras).await,
-            PredictionVariant::Cancel => self.send_cancel_prediction_signal(command, common_paras).await,
+            PredCmd::Start => self.send_create_prediction_signal(command, sub_argument, common_paras).await,
+            PredCmd::Lock => self.send_lock_prediction_signal(command, common_paras).await,
+            PredCmd::Outcome => self.send_outcome_prediction_signal(command, sub_argument, common_paras).await,
+            PredCmd::Cancel => self.send_cancel_prediction_signal(command, common_paras).await,
 
             _ => ()
         }
@@ -322,7 +330,7 @@ impl Bot {
     }
 
     async fn send_lock_prediction_signal(&mut self, command: Command, common_paras: CommonTwitchParameters) {
-        let _  = self.twitch_client.send_signal(BotSignal::LockPrediction{ 
+        let _  = self.twitch_client.send_signal(BotSignal::EndPrediction{ 
             common_paras, 
             command,
         });
