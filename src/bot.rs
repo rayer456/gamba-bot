@@ -1,3 +1,4 @@
+use core::panic;
 use std::fmt::Display;
 
 use std::process::exit;
@@ -10,9 +11,9 @@ use crate::command::{self, Command};
 use crate::config::Config;
 use crate::message::User;
 use crate::prediction::{self, Prediction, PredictionCommandVariant as PredCmd};
-use crate::signal::{BotSignal, TwitchApiSignal};
+use crate::signal::{BotSignal, PredictionStatus, TwitchApiSignal};
 use crate::token::Token;
-use crate::twitch::{self, CommonTwitchParameters, TwitchApiClient};
+use crate::twitch::{self, TwitchCommonParameters, TwitchApiClient};
 use crate::{message::Message, stream::Stream};
 
 use anyhow::{bail, Result};
@@ -159,7 +160,7 @@ impl Bot {
                 TwitchApiSignal::Unknown { status, text }=> println!("ERROR: unknown response: {status}: {text}"),
 
                 TwitchApiSignal::PredictionCreated => println!("INFO: created prediction via API"),
-
+                _ => ()
             }
         }
     }
@@ -277,8 +278,8 @@ impl Bot {
 
     //// TODO: Think of moving the prediction functions outside of bot? client_id is static, access_token can be send via channel...
     
-    fn get_common_twitch_parameters(&self) -> CommonTwitchParameters {
-        CommonTwitchParameters::new(
+    fn get_common_twitch_parameters(&self) -> TwitchCommonParameters {
+        TwitchCommonParameters::new(
             self.cfg.twitch_cfg.client_id.clone(),
             self.stream_token.access_token.clone(),
             self.cfg.twitch_cfg.broadcaster_id.clone(),
@@ -296,23 +297,32 @@ impl Bot {
         let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
         let common_paras = self.get_common_twitch_parameters(); 
 
-        // Testing: Parse this into an object
-        if let Ok(latest_pred_str) = self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await {
-            println!("{latest_pred_str}");
-            exit(1);
-        }
+
 
         match pred_variant {
             PredCmd::Start => self.send_create_prediction_signal(command, sub_argument, common_paras).await,
-            PredCmd::Lock => self.send_lock_prediction_signal(command, common_paras).await,
-            PredCmd::Outcome => self.send_outcome_prediction_signal(command, sub_argument, common_paras).await,
-            PredCmd::Cancel => self.send_cancel_prediction_signal(command, common_paras).await,
+            PredCmd::Invalid => (),
 
-            _ => ()
+            // end pred
+            _ => self.send_end_prediction_signal(command, common_paras, pred_variant).await,
+            
+            // Any other variant is a call to the end prediction endpoint
+            // other => { 
+            //     // Parse further into a proper object
+            //     let Ok(latest_pred_str) = self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await else { return; };
+
+            //     println!("{latest_pred_str}");
+            //     //exit(1);
+
+            //     match other {
+            //         PredCmd::Lock => 
+            //     }
+                
+            // }
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String, common_paras: CommonTwitchParameters) {
+    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String, common_paras: TwitchCommonParameters) {
 
         // TODO: remove prediction_name_exists and just search by name and return an option
         if !prediction::prediction_name_exists(&self.loaded_predictions, &prediction_name) {
@@ -322,17 +332,70 @@ impl Bot {
         }
 
         let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { return };
-        let _ = self.twitch_client.send_signal(BotSignal::CreatePrediction {
-            common_paras,
-            command,
-            prediction: prediction.clone(),
-        });
+        // let _ = self.twitch_client.send_signal(BotSignal::CreatePrediction {
+        //     common_paras,
+        //     command,
+        //     prediction: prediction.clone(),
+        // });
+
+        self.twitch_client.create_prediction(common_paras, command, prediction.clone());
     }
 
-    async fn send_lock_prediction_signal(&mut self, command: Command, common_paras: CommonTwitchParameters) {
-        let _  = self.twitch_client.send_signal(BotSignal::EndPrediction{ 
-            common_paras, 
-            command,
-        });
+    async fn send_end_prediction_signal(&mut self, command: Command, common_paras: TwitchCommonParameters, subcommand: PredCmd) {
+        use PredictionStatus as Status;
+
+
+        let latest_pred = match self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await {
+            Ok(latest_pred) => latest_pred,
+            Err(e) => {
+                println!("{e}");
+                return;
+            }
+        };
+
+        match latest_pred.status {
+            Status::Locked => {
+                if subcommand == PredCmd::Lock {
+                    self.chat("Prediction is already locked!");
+                    return;
+                }
+            },
+            Status::Canceled|Status::Resolved {..} => {
+                self.chat("No active predictions! Use pred start <name> to start a prediction!");
+                return;
+            },
+            Status::Active => (), // Irrelevant here
+        }
+
+        println!("{:?}", latest_pred);
+        // exit(1);
+
+        // find_winning_outcome 
+        // let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
+
+        //     let _  = self.twitch_client.send_signal(BotSignal::EndPrediction{ 
+        //         common_paras,
+        //         command,
+        //         status: Predi
+        //    });
+
+        let id = &latest_pred.id; // doesn't need to be a reference
+
+        let winning_id = latest_pred.outcomes[0].id.clone();
+
+        println!("{}", latest_pred.id);
+
+        match subcommand {
+            PredCmd::Lock => self.twitch_client.end_prediction(common_paras, command, id.clone(), Status::Locked, ),
+            PredCmd::Cancel => self.twitch_client.end_prediction(common_paras, command, id.clone(), Status::Canceled),
+            PredCmd::Outcome => self.twitch_client.end_prediction(
+                common_paras,
+                command,
+                id.clone(), 
+                Status::Resolved { winning_outcome_id: Some(winning_id) },
+            ), // get this from latest_pred
+
+            _ => panic!("shouldn't fucking happen"),
+        };
     }
 }

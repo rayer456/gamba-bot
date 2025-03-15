@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
+
+use crate::signal::PredictionStatus;
 
 #[derive(PartialEq)]
 pub enum PredictionCommandVariant { // kinda shit name
@@ -30,16 +32,30 @@ pub struct PredictionResponse {
     
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct EndPredictionData {
+    pub broadcaster_id: String,
+    pub id: String,
+    pub status: String,
+    
+    #[serde(skip_serializing_if = "outcome_id_not_exists")]
+    pub winning_outcome_id: Option<String>
+}
+
+fn outcome_id_not_exists(x: &Option<String>) -> bool {
+    x.is_none()
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Prediction {
     pub name: String,
     pub auto_start: bool,
-    pub data_for_twitch: DataForTwitch,
+    pub data_for_twitch: CreatePredictionData,
     pub split_name: String,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub struct DataForTwitch {
+pub struct CreatePredictionData {
     pub title: String,
     pub outcomes: Vec<Outcome>,
     pub prediction_window: u16,
@@ -48,7 +64,62 @@ pub struct DataForTwitch {
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Outcome {
-    pub title: String
+    pub title: String, // only serialize this field when sending to API / saving to file
+
+    // deserialize this from API (filled in) or from file (default values)
+    #[serde(skip_serializing, default)]
+    pub id: String,
+
+    #[serde(skip_serializing, default)]
+    pub users: u32,
+
+    #[serde(skip_serializing, default)]
+    pub channel_points: u32,
+
+    #[serde(skip_serializing, default)]
+    pub top_predictors: Option<Vec<Predictor>>, // TODO: check Option value when resolving, but no winners
+
+    #[serde(skip_serializing, default)]
+    pub color: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct Predictor {
+    pub user_id: String,
+    pub user_name: String,
+    pub user_login: String,
+    pub channel_points_used: u32,
+    pub channel_points_won: u32
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct PredictionFromTwitch {
+    pub id: String,
+    pub broadcaster_id: String,
+    pub broadcaster_name: String,
+    pub broadcaster_login: String,
+    pub title: String,
+    pub winning_outcome_id: Option<String>, // only when RESOLVED
+    pub outcomes: Vec<Outcome>,
+    pub prediction_window: u16,
+
+    #[serde(deserialize_with = "status_deserializer")]
+    pub status: PredictionStatus,
+
+    pub created_at: String,
+    pub ended_at: Option<String>,
+    pub locked_at: Option<String>,
+
+}
+
+fn status_deserializer<'de, D>(input: D) -> Result<PredictionStatus, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let s = String::deserialize(input)?;
+    let p: PredictionStatus = s.into();
+
+    Ok(p)
 }
 
 pub async fn get_predictions() -> Result<Vec<Prediction>> {
