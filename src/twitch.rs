@@ -163,9 +163,6 @@ pub async fn end_prediction(
     command: Command,
     data: EndPredictionData) {
 
-    // let ser = &serde_json::to_string(&data).unwrap();
-    // println!("{ser}");
-
     
     // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let response = api_client
@@ -181,18 +178,18 @@ pub async fn end_prediction(
     
     match status {
         400 => {
-            println!("400: Failed to lock prediction: {text}");
+            println!("400: Failed to end prediction: {text}");
             let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
         }
         401 => {
-            println!("401: Failed to lock prediction: {text}");
+            println!("401: Failed to end prediction: {text}");
             let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
                 command,
                 reason: text,
             }).await;
         }
         200 => {
-            println!("Locked prediction successfully");
+            println!("Ended prediction successfully");
             let _ = tx_to_bot.send(TwitchApiSignal::PredictionLocked).await;
         }
         429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
@@ -226,6 +223,10 @@ pub async fn create_prediction(
     
     match status {
         400 => {
+            // Should only fail if automod block or prediction already active
+            // TODO: use automod to warn user when they create predictions with automod held terms
+            // https://dev.twitch.tv/docs/api/reference/#check-automod-status
+
             println!("400: Failed to create prediction: {text}");
             let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
         }

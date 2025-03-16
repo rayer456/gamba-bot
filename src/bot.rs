@@ -61,9 +61,6 @@ impl Bot {
         let (_, rx_from_bot) = tokio::sync::mpsc::channel(32);
         let (tx_to_bot, rx_from_api_client) = tokio::sync::mpsc::channel(32);
 
-        // TODO: Why run this in a separate thread????
-        // Just run it in the same thread and call a function of this client that will
-        // run a request async, don't even need BotSignal anymore
         let twitch_client = TwitchApiClient::new(rx_from_bot, tx_to_bot);
         
 
@@ -294,13 +291,10 @@ impl Bot {
             return;
         }
 
-        let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
         let common_paras = self.get_common_twitch_parameters(); 
 
-
-
         match pred_variant {
-            PredCmd::Start => self.send_create_prediction_signal(command, sub_argument, common_paras).await,
+            PredCmd::Start => self.send_create_prediction_signal(command, common_paras).await,
             PredCmd::Invalid => (),
 
             // end pred
@@ -322,11 +316,17 @@ impl Bot {
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command, prediction_name: String, common_paras: TwitchCommonParameters) {
+    async fn send_create_prediction_signal(&mut self, command: Command, common_paras: TwitchCommonParameters) {
+
+        let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
+
+        let Some(prediction_name) = command.get_nth_argument(1) else {
+            self.chat(format!("Missing argument: <prediction name>. Available predictions: {preds_str}"));
+            return;
+        };
 
         // TODO: remove prediction_name_exists and just search by name and return an option
         if !prediction::prediction_name_exists(&self.loaded_predictions, &prediction_name) {
-            let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
             self.chat(format!("Prediction {prediction_name} not found. Available predictions: {preds_str}"));
             return;
         }
@@ -367,33 +367,34 @@ impl Bot {
             Status::Active => (), // Irrelevant here
         }
 
-        println!("{:?}", latest_pred);
-        // exit(1);
-
-        // find_winning_outcome 
-        // let sub_argument = command.arguments.get(1).map_or("", |sa| sa.as_str()).to_owned();
-
-        //     let _  = self.twitch_client.send_signal(BotSignal::EndPrediction{ 
-        //         common_paras,
-        //         command,
-        //         status: Predi
-        //    });
-
-        let id = &latest_pred.id; // doesn't need to be a reference
-
-        let winning_id = latest_pred.outcomes[0].id.clone();
-
-        println!("{}", latest_pred.id);
 
         match subcommand {
-            PredCmd::Lock => self.twitch_client.end_prediction(common_paras, command, id.clone(), Status::Locked, ),
-            PredCmd::Cancel => self.twitch_client.end_prediction(common_paras, command, id.clone(), Status::Canceled),
-            PredCmd::Outcome => self.twitch_client.end_prediction(
-                common_paras,
-                command,
-                id.clone(), 
-                Status::Resolved { winning_outcome_id: Some(winning_id) },
-            ), // get this from latest_pred
+            PredCmd::Lock => self.twitch_client.end_prediction(common_paras, command, latest_pred.id, Status::Locked, ),
+            PredCmd::Cancel => self.twitch_client.end_prediction(common_paras, command, latest_pred.id, Status::Canceled),
+            PredCmd::Outcome => {
+                let num_outcomes = latest_pred.outcomes.len();
+
+                let Some(outcome_str) = command.get_nth_argument(1) else {
+                    self.chat(format!("Missing argument: <outcome>. Expected a value of 1-{num_outcomes}"));
+                    return;
+                };
+
+                let outcome_int = match outcome_str.trim().parse::<usize>() {
+                    Ok(int) if 0 < int && int <= num_outcomes => int,
+                    _ => {
+                        self.chat(format!("Unexpected value for argument <outcome>. Expected a value of 1-{num_outcomes}"));
+                        return;
+                    },
+                };
+
+                let winning_id = latest_pred.outcomes[outcome_int-1].id.clone();
+                self.twitch_client.end_prediction(
+                    common_paras,
+                    command,
+                    latest_pred.id, 
+                    Status::Resolved { winning_outcome_id: Some(winning_id) },
+                )
+            },
 
             _ => panic!("shouldn't fucking happen"),
         };

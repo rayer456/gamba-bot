@@ -64,6 +64,10 @@ impl Command {
             .any(|user_group| self.allowed_to_bypass.contains(user_group))
     }
 
+    pub fn get_nth_argument(&self, index: usize) -> Option<String> {
+        return self.arguments.get(index).cloned();
+    }
+
     pub fn is_user_cooldown_active(&mut self, user: &User) -> bool {
         for recent_user in &mut self.recent_users {
             if recent_user.user.username != user.username {
