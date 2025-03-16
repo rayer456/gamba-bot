@@ -70,7 +70,7 @@ impl TwitchAuthProcess {
         let mut array_of_bytes = [0; 1024];
         reader.read(&mut array_of_bytes)?;
 
-        let request_as_str = String::from_utf8(array_of_bytes.to_vec()).unwrap();
+        let request_as_str = String::from_utf8(array_of_bytes.to_vec())?;
         let lines: Vec<&str> = request_as_str.lines().collect();
         let first_line: Vec<&str> = lines[0].split(' ').collect();
 

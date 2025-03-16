@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs, ops::Deref, time::Duration};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Ok, Result};
 use reqwest::{header::{AUTHORIZATION, CONTENT_TYPE}, Client};
 use serde_json::Value;
 use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
@@ -27,79 +27,13 @@ impl TwitchCommonParameters {
     }
 }
 
-pub struct TwitchApiClient {
-    client: Client,
-    rx_from_bot: TokioReceiver<BotSignal>, // TODO: can probably remove this receiver, nothing to receive
-    tx_to_bot: TokioSender<TwitchApiSignal>, // send to async task
-
-}
-
-impl TwitchApiClient {
-    pub fn new(rx_from_bot: TokioReceiver<BotSignal>, tx_to_bot: TokioSender<TwitchApiSignal>) -> Self {
-        TwitchApiClient {
-            client: Client::new(),
-            rx_from_bot,
-            tx_to_bot,
-
-        }
-    }
-
-    // // TODO: signal could go away? Just call the desired method directly from bot
-    // pub fn send_signal(&mut self, bot_signal: BotSignal) {
-    //     match signal {
-    //         BotSignal::CreatePrediction { common_paras, command, prediction} => self.create_prediction(common_paras, command, prediction),
-    //         BotSignal::EndPrediction { common_paras, command, status, id } => {
-    //             self.lock_prediction(common_paras, command);
-    //         }
-    //     };
-    // }
-
-    pub fn create_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command, prediction: Prediction) {
-        let client = self.client.clone();
-        let tx_to_bot_c = self.tx_to_bot.clone();
-        spawn(create_prediction(client, common_paras, tx_to_bot_c, command, prediction));
-    }
-
-    pub fn end_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command, id: String, status: PredictionStatus) {
-        let client = self.client.clone();
-        let tx_to_bot_c = self.tx_to_bot.clone();
-
-        let winning_outcome_id = match &status {
-            PredictionStatus::Resolved { winning_outcome_id } => winning_outcome_id.clone(),
-            _ => None,
-        };
-
-        let data = EndPredictionData {
-            broadcaster_id: common_paras.broadcaster_id.clone(),
-            id,
-            status: status.into(),
-            winning_outcome_id,
-        };
-
-        spawn(end_prediction(client, common_paras, tx_to_bot_c, command, data));
-    }
-
-    pub async fn get_latest_prediction(&mut self, common_paras: TwitchCommonParameters, command: Command) -> Result<PredictionFromTwitch> {
-        let client = self.client.clone();
-        let tx_to_bot_c = self.tx_to_bot.clone();
-        
-        let handle = spawn(get_latest_prediction(client, common_paras, tx_to_bot_c, command));
-        let res = handle.await?;
-
-
-        res
-    }
-
-}
 
 pub async fn get_latest_prediction(
-    api_client: Client, 
+    api_client: Client,
     common_paras: TwitchCommonParameters,
     tx_to_bot: TokioSender<TwitchApiSignal>,
     command: Command) -> Result<PredictionFromTwitch> {
 
-
-    // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let mut params = HashMap::new();
     params.insert("broadcaster_id", common_paras.broadcaster_id.as_str());
     params.insert("first", "1");
@@ -108,15 +42,13 @@ pub async fn get_latest_prediction(
         .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
         .header("client-id", common_paras.client_id)
         .query(&params)
-        .send().await;
+        .send().await?;
 
-    let res = response.unwrap();
-    let status = res.status().as_u16();
-    let text = res.text().await.unwrap();
-    
+    let status = response.status().as_u16();
+    let text = response.text().await?;
+
     match status {
         400 => {
-            println!("400: Failed to get prediction: {text}");
             let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
         }
         401 => {
@@ -137,7 +69,6 @@ pub async fn get_latest_prediction(
 
             let pred_objects = serde_json::from_value::<Vec<PredictionFromTwitch>>(data.clone())?;
 
-            
             let Some(pred) = pred_objects.first() else {
                 bail!("prediction list is empty");
             };
@@ -161,26 +92,20 @@ pub async fn end_prediction(
     common_paras: TwitchCommonParameters,
     tx_to_bot: TokioSender<TwitchApiSignal>,
     command: Command,
-    data: EndPredictionData) {
+    data: EndPredictionData) -> Result<()> {
 
-    
-    // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let response = api_client
         .patch(PREDICTIONS_URL)
         .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
         .header("client-id", common_paras.client_id)
         .json(&data)
-        .send().await;
+        .send().await?;
 
-    let res = response.unwrap();
-    let status = res.status().as_u16();
-    let text = res.text().await.unwrap();
+    let status = response.status().as_u16();
+    let text = response.text().await?;
     
     match status {
-        400 => {
-            println!("400: Failed to end prediction: {text}");
-            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
-        }
+        400 => bail!("Failed to end prediction: {text}"),
         401 => {
             println!("401: Failed to end prediction: {text}");
             let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
@@ -198,28 +123,30 @@ pub async fn end_prediction(
             text,
         }).await),
     };
+
+    Ok(())
 }
+
+
 
 pub async fn create_prediction(
     api_client: Client, 
     common_paras: TwitchCommonParameters,
     tx_to_bot: TokioSender<TwitchApiSignal>,
     command: Command,
-    mut prediction: Prediction) {
+    mut prediction: Prediction) -> Result<()> {
 
     prediction.data_for_twitch.broadcaster_id = common_paras.broadcaster_id;
 
-    // TODO: Think of making simple response struct with basic shit like status text wrapped in a Result
     let response = api_client
         .post(PREDICTIONS_URL)
         .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
         .header("client-id", common_paras.client_id)
         .json(&prediction.data_for_twitch)
-        .send().await;
+        .send().await?;
 
-    let res = response.unwrap();
-    let status = res.status().as_u16();
-    let text = res.text().await.unwrap();
+    let status = response.status().as_u16();
+    let text = response.text().await?;
     
     match status {
         400 => {
@@ -247,5 +174,7 @@ pub async fn create_prediction(
             text,
         }).await),
     };
+
+    Ok(())
 }
 

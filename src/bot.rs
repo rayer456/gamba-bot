@@ -10,16 +10,17 @@ use std::time::Duration;
 use crate::command::{self, Command};
 use crate::config::Config;
 use crate::message::User;
-use crate::prediction::{self, Prediction, PredictionCommandVariant as PredCmd};
+use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd};
 use crate::signal::{BotSignal, PredictionStatus, TwitchApiSignal};
 use crate::token::Token;
-use crate::twitch::{self, TwitchCommonParameters, TwitchApiClient};
+use crate::twitch::{self, TwitchCommonParameters};
 use crate::{message::Message, stream::Stream};
 
 use anyhow::{bail, Result};
 
 use rand::Rng;
 use reqwest::header::AUTHORIZATION;
+use reqwest::Client;
 use serde_json::Value;
 use futures::join;
 use tokio::{signal, spawn};
@@ -35,9 +36,9 @@ pub struct Bot {
     pub active_commands: Vec<Command>,
     pub loaded_predictions: Vec<Prediction>,
 
-    pub twitch_client: TwitchApiClient,
-    // pub tx_to_api_client: TokioSender<BotSignal>,
-    pub rx_from_api_client: TokioReceiver<TwitchApiSignal>, // TODO: doesn't need to be tokioreceiver
+    http_client: Client,
+    tx_to_bot: TokioSender<TwitchApiSignal>,
+    pub bot_rx: TokioReceiver<TwitchApiSignal>, // TODO: doesn't need to be tokioreceiver
 }
 
 impl Bot {
@@ -58,10 +59,10 @@ impl Bot {
         );
 
         // API channels
-        let (_, rx_from_bot) = tokio::sync::mpsc::channel(32);
-        let (tx_to_bot, rx_from_api_client) = tokio::sync::mpsc::channel(32);
+        // let (_, rx_from_bot) = tokio::sync::mpsc::channel(32);
+        let (tx_to_bot, bot_rx) = tokio::sync::mpsc::channel(32);
 
-        let twitch_client = TwitchApiClient::new(rx_from_bot, tx_to_bot);
+        // let twitch_client = TwitchApiClient::new(rx_from_bot, tx_to_bot);
         
 
         let mut bot = Bot {
@@ -72,9 +73,9 @@ impl Bot {
             active_commands: active_commands?,
             loaded_predictions: predictions?,
 
-            twitch_client,
-            // tx_to_api_client,
-            rx_from_api_client,
+            http_client: Client::new(),
+            tx_to_bot,
+            bot_rx,
         };
 
         
@@ -149,7 +150,7 @@ impl Bot {
     }
 
     async fn read_channels(&mut self) {
-        if let Ok(signal) = self.rx_from_api_client.try_recv() {
+        if let Ok(signal) = self.bot_rx.try_recv() {
             match signal {
                 TwitchApiSignal::Unauthorized { command, reason } => self.respond_to_invalid_token(command, reason).await,
                 TwitchApiSignal::BadRequest(reason) => println!("ERROR: 400 Bad Request: {reason}"),
@@ -165,7 +166,7 @@ impl Bot {
     async fn respond_to_invalid_token(&mut self, command: Command, reason: String) {
         // TODO: Might be used for non command API calls too, will need to support other options than just a command
         if let Some(elapsed) = self.stream_token.last_refresh_elapsed() {
-            if elapsed < Duration::from_secs(2) {
+            if elapsed < Duration::from_secs(10) {
                 // Really bad
                 println!("ERROR: Stream token is being refreshed way too soon, 401's are being returned for a different reason.");
                 return;
@@ -291,14 +292,13 @@ impl Bot {
             return;
         }
 
-        let common_paras = self.get_common_twitch_parameters(); 
 
         match pred_variant {
-            PredCmd::Start => self.send_create_prediction_signal(command, common_paras).await,
+            PredCmd::Start => self.send_create_prediction_signal(command).await,
             PredCmd::Invalid => (),
 
             // end pred
-            _ => self.send_end_prediction_signal(command, common_paras, pred_variant).await,
+            _ => self.send_end_prediction_signal(command, pred_variant).await,
             
             // Any other variant is a call to the end prediction endpoint
             // other => { 
@@ -316,7 +316,7 @@ impl Bot {
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command, common_paras: TwitchCommonParameters) {
+    async fn send_create_prediction_signal(&mut self, command: Command) {
 
         let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
 
@@ -332,20 +332,25 @@ impl Bot {
         }
 
         let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { return };
-        // let _ = self.twitch_client.send_signal(BotSignal::CreatePrediction {
-        //     common_paras,
-        //     command,
-        //     prediction: prediction.clone(),
-        // });
 
-        self.twitch_client.create_prediction(common_paras, command, prediction.clone());
+        spawn(twitch::create_prediction(
+            self.http_client.clone(),
+            self.get_common_twitch_parameters(), 
+            self.tx_to_bot.clone(),
+            command,
+            prediction.clone()
+        ));
     }
 
-    async fn send_end_prediction_signal(&mut self, command: Command, common_paras: TwitchCommonParameters, subcommand: PredCmd) {
+    async fn send_end_prediction_signal(&mut self, command: Command, subcommand: PredCmd) {
         use PredictionStatus as Status;
 
-
-        let latest_pred = match self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await {
+        let latest_pred = match twitch::get_latest_prediction(
+                self.http_client.clone(),
+                self.get_common_twitch_parameters(), 
+                self.tx_to_bot.clone(),
+                command.clone(),
+            ).await {
             Ok(latest_pred) => latest_pred,
             Err(e) => {
                 println!("{e}");
@@ -367,10 +372,9 @@ impl Bot {
             Status::Active => (), // Irrelevant here
         }
 
-
-        match subcommand {
-            PredCmd::Lock => self.twitch_client.end_prediction(common_paras, command, latest_pred.id, Status::Locked, ),
-            PredCmd::Cancel => self.twitch_client.end_prediction(common_paras, command, latest_pred.id, Status::Canceled),
+        let desired_status = match subcommand {
+            PredCmd::Lock => Status::Locked,
+            PredCmd::Cancel => Status::Canceled,
             PredCmd::Outcome => {
                 let num_outcomes = latest_pred.outcomes.len();
 
@@ -388,15 +392,41 @@ impl Bot {
                 };
 
                 let winning_id = latest_pred.outcomes[outcome_int-1].id.clone();
-                self.twitch_client.end_prediction(
-                    common_paras,
-                    command,
-                    latest_pred.id, 
-                    Status::Resolved { winning_outcome_id: Some(winning_id) },
-                )
+                Status::Resolved { winning_outcome_id: Some(winning_id) }
             },
 
             _ => panic!("shouldn't fucking happen"),
         };
+        
+        let common_paras = self.get_common_twitch_parameters();
+        let data = EndPredictionData {
+            broadcaster_id: common_paras.broadcaster_id.clone(),
+            id: latest_pred.id,
+            status: desired_status.clone().into(),
+            winning_outcome_id: match desired_status {
+                PredictionStatus::Resolved { winning_outcome_id } => winning_outcome_id.clone(),
+                _ => None,
+            },
+        };
+        
+        // TODO: get result of function in the spawn function, then call tx_to_bot
+        let http_client_c = self.http_client.clone();
+        let tx_to_bot_c = self.tx_to_bot.clone();
+        spawn(async move {
+            let res = twitch::end_prediction(
+                http_client_c,
+                common_paras,
+                tx_to_bot_c,
+                command,
+                data,
+            ).await;
+
+            match res {
+                Ok(_) => println!("ended prediction succesfully"),
+                Err(e) => 
+            }
+
+        });
+
     }
 }

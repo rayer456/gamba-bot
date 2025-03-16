@@ -153,7 +153,7 @@ impl Command {
 pub async fn get_commands() -> Result<Vec<Command>> {
     let commands_yaml = match std::fs::read_to_string("commands.yaml") {
         Ok(cmds) => cmds,
-        Err(e) => bail!("{e}:\nFile commands.yaml not found, can't continue."),
+        Err(e) => bail!("{e}: commands.yaml. Cannot continue"),
     };
 
     let yaml_commands: Vec<Command> = match serde_yaml::from_str(&commands_yaml) {

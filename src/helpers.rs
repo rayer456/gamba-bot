@@ -22,13 +22,15 @@ pub fn extract_parameters(url: &str) -> HashMap<String, String> {
     return res
 }
 
+// TODO: ask chatgpt or something
 pub fn get_rand_string(length: u8) -> String {
-    let chars = "abcdefghijklmnopqrstuvwxyz0123456789"; // 36 chars
+    let chars = "abcdefghijklmnopqrstuvwxyz0123456789";
     let mut rand_str = String::new();
     let mut rng = rand::thread_rng();
-    for i in 0..length {
-        rand_str.push(chars.chars().nth(rng.gen_range(0..36)).unwrap());
+    for _ in 0..length {
+        rand_str.push(chars.chars().nth(rng.gen_range(0..chars.len())).unwrap());
     }
+
 
     rand_str
 }
