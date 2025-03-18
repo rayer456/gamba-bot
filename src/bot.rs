@@ -2,6 +2,7 @@ use core::panic;
 use std::fmt::Display;
 
 use std::process::exit;
+use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use std::thread::{self};
@@ -45,6 +46,9 @@ impl Bot {
     pub async fn initialize() -> Result<Self> {
         let cfg = Config::build("settings.toml")?;
 
+        // Use Rc for config test shit
+        let x = Rc::new(cfg);
+        
         // async
         let (bot_token, stream_token, active_commands, predictions, irc_stream) = join!(
             Token::from_file(cfg.twitch_cfg.bot_token_path.clone(), cfg.clone()),
