@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,8 @@ impl Config {
 
         Ok(())
     }
+
+    
 }
 
 impl Default for Config {
@@ -48,7 +50,7 @@ pub struct TwitchConfig {
     pub irc_port: u16,
     pub account: String,
     pub channel: String,
-    pub broadcaster_id: String,
+    pub broadcaster_id: RefCell<String>,
     pub bot_token_path: String,
     pub stream_token_path: String,
 }

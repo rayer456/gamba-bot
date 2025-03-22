@@ -1,6 +1,7 @@
 use core::panic;
 use std::fmt::Display;
 
+use std::ops::Deref;
 use std::process::exit;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -16,6 +17,7 @@ use crate::signal::{BotSignal, PredictionStatus, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
 use crate::{message::Message, stream::Stream};
+use crate::token::TokenType;
 
 use anyhow::{bail, Result};
 
@@ -31,7 +33,7 @@ const USERS_URL: &'static str = "https://api.twitch.tv/helix/users";
 
 pub struct Bot {
     pub irc_stream: Stream,
-    pub cfg: Config,
+    pub cfg: Rc<Config>,
     pub bot_token: Token,
     pub stream_token: Token,
     pub active_commands: Vec<Command>,
@@ -46,15 +48,18 @@ impl Bot {
     pub async fn initialize() -> Result<Self> {
         let cfg = Config::build("settings.toml")?;
 
-        // Testing 
-        // let cfg_rc: Rc<Config> = Rc::new(cfg.clone());
-
-
+        let cfg_rc: Rc<Config> = Rc::new(cfg.clone());
         
         // async
         let (bot_token, stream_token, active_commands, predictions, irc_stream) = join!(
-            Token::from_file(cfg.twitch_cfg.bot_token_path.clone(), cfg.clone()),
-            Token::from_file(cfg.twitch_cfg.stream_token_path.clone(), cfg.clone()),
+            Token::new(
+                Rc::clone(&cfg_rc),
+                TokenType::Bot,
+            ),
+            Token::new(
+                Rc::clone(&cfg_rc),
+                TokenType::Streamer,
+            ),
             command::get_commands(),
             prediction::get_predictions(),
             Stream::new(
@@ -73,7 +78,7 @@ impl Bot {
 
         let mut bot = Bot {
             irc_stream: irc_stream?,
-            cfg: cfg.clone(),
+            cfg: cfg_rc,
             bot_token: bot_token?,
             stream_token: stream_token?,
             active_commands: active_commands?,
@@ -244,8 +249,7 @@ impl Bot {
     pub async fn update_broadcaster_id(&mut self) -> Result<()> {
         // https://dev.twitch.tv/docs/api/reference/#get-users
 
-        let areyouthisdumb = &self.cfg.twitch_cfg.channel;
-        let params = [("login", areyouthisdumb)];
+        let params = [("login", &self.cfg.twitch_cfg.channel)];
         let client = reqwest::Client::new();
         let response = client
             .get(USERS_URL)
@@ -260,7 +264,7 @@ impl Bot {
                 let text = response.text().await?;
                 match serde_json::from_str::<Value>(&text)?["data"][0]["id"].as_str() {
                     Some(id) => {
-                        self.cfg.twitch_cfg.broadcaster_id = id.to_string();
+                        *self.cfg.twitch_cfg.broadcaster_id.borrow_mut() = id.to_string();  
                         self.cfg.update_file()?;
 
                         Ok(())
@@ -287,7 +291,7 @@ impl Bot {
         TwitchCommonParameters::new(
             self.cfg.twitch_cfg.client_id.clone(),
             self.stream_token.access_token.clone(),
-            self.cfg.twitch_cfg.broadcaster_id.clone(),
+            self.cfg.twitch_cfg.broadcaster_id.borrow().clone(),
         )
     }
 
@@ -384,7 +388,6 @@ impl Bot {
             PredCmd::Cancel => Status::Canceled,
             PredCmd::Outcome => {
                 let num_outcomes = latest_pred.outcomes.len();
-
                 let Some(outcome_str) = command.get_nth_argument(1) else {
                     self.chat(format!("Missing argument: <outcome>. Expected a value of 1-{num_outcomes}"));
                     return;
@@ -401,7 +404,6 @@ impl Bot {
                 let winning_id = latest_pred.outcomes[outcome_int-1].id.clone();
                 Status::Resolved { winning_outcome_id: Some(winning_id) }
             },
-
             _ => panic!("shouldn't fucking happen"),
         };
         

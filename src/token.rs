@@ -1,11 +1,23 @@
 use anyhow::{bail, Result};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
-use serde::{Deserialize, Deserializer};
-use std::time::{Duration, Instant, SystemTime};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::{rc::Rc, time::{Duration, Instant, SystemTime}};
 
 use crate::{config::Config, TOKEN_ENDPOINT};
 
 const VALIDATION_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/validate";
+
+pub enum TokenType {
+    Streamer,
+    Bot,
+}
+
+// Only here so serde doesn't complain. This default will always be reset in Token::new()
+impl Default for TokenType {
+    fn default() -> Self {
+        TokenType::Streamer 
+    }
+}
 
 #[derive(Deserialize)]
 pub struct Token {
@@ -14,10 +26,10 @@ pub struct Token {
     refresh_token: String,
 
     #[serde(skip)]
-    config: Config,
-
+    cfg: Rc<Config>,
+    
     #[serde(skip)]
-    path: String,
+    token_type: TokenType,
 
     #[serde(skip, default = "SystemTime::now")]
     last_validated: SystemTime,
@@ -27,11 +39,15 @@ pub struct Token {
 }
 
 impl Token {
-    pub async fn from_file(path: String, config: Config) -> Result<Token> {
-        let file_content = std::fs::read_to_string(&path)?;
+    pub async fn new(cfg_clone: Rc<Config>, token_type: TokenType) -> Result<Token> {
+        let path = match token_type {
+            TokenType::Streamer => &cfg_clone.twitch_cfg.stream_token_path,
+            TokenType::Bot => &cfg_clone.twitch_cfg.bot_token_path,
+        };
+        let file_content = std::fs::read_to_string(path)?;
         let mut token: Token = serde_json::from_str(file_content.as_str())?;
-        token.path = path;
-        token.config = config;
+        token.cfg = cfg_clone;
+        token.token_type = token_type;
 
         match token.validate().await {
             Ok(_) => return Ok(token),
@@ -40,10 +56,10 @@ impl Token {
     }
 
     pub async fn refresh(&mut self) -> Result<()> {
-        let params = [
-            ("client_id", &self.config.twitch_cfg.client_id),
-            ("client_secret", &self.config.twitch_cfg.client_secret),
-            ("grant_type", &String::from("refresh_token")),
+        let params: [(&str, &str); 4] = [
+            ("client_id", &self.cfg.twitch_cfg.client_id),
+            ("client_secret", &self.cfg.twitch_cfg.client_secret),
+            ("grant_type", "refresh_token"),
             ("refresh_token", &self.refresh_token),
         ];
         let client = reqwest::Client::new();
@@ -67,9 +83,13 @@ impl Token {
                 println!("refreshed.");
 
                 // Write response to file
-                std::fs::write(&self.path, response.as_bytes())?;
+                let path = match self.token_type {
+                    TokenType::Streamer => &self.cfg.twitch_cfg.stream_token_path,
+                    TokenType::Bot => &self.cfg.twitch_cfg.bot_token_path,
+                };
+                std::fs::write(path, response.as_bytes())?;
 
-                // Update properties
+                // Update fields
                 let new_token: Token = serde_json::from_str(response.as_str())?;
                 self.access_token = new_token.access_token;
                 self.refresh_token = new_token.refresh_token;

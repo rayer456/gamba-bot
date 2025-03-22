@@ -1,4 +1,5 @@
 /target
+/.vscode
 
 todo.md
 
@@ -7,3 +8,4 @@ commands.yaml
 predictions.json
 
 /tokens
+
