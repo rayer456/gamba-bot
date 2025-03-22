@@ -7,7 +7,9 @@ use toml;
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub twitch_cfg: TwitchConfig,
+
     // Add other config stuff here later
+    pub version: String,
 }
 
 impl Config {
@@ -34,6 +36,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             twitch_cfg: TwitchConfig::default(),
+            version: String::default(),
         }
     }
 }
@@ -55,6 +58,7 @@ pub struct TwitchConfig {
     pub stream_token_path: String,
 }
 
+// only used for token parsing lol
 impl Default for TwitchConfig {
     fn default() -> Self {
         Self {

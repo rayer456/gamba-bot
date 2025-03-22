@@ -21,6 +21,7 @@ use crate::token::TokenType;
 
 use anyhow::{bail, Result};
 
+use futures::stream::PollNext;
 use rand::Rng;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
@@ -47,6 +48,7 @@ pub struct Bot {
 impl Bot {
     pub async fn initialize() -> Result<Self> {
         let cfg = Config::build("settings.toml")?;
+
 
         let cfg_rc: Rc<Config> = Rc::new(cfg.clone());
         
@@ -99,7 +101,6 @@ impl Bot {
             Ok(_) => return Ok(bot),
             Err(e) => bail!(e),
         }
-
     }
 
     pub async fn run(&mut self) {
