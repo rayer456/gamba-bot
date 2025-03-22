@@ -46,8 +46,10 @@ impl Bot {
     pub async fn initialize() -> Result<Self> {
         let cfg = Config::build("settings.toml")?;
 
-        // Use Rc for config test shit
-        let x = Rc::new(cfg);
+        // Testing 
+        // let cfg_rc: Rc<Config> = Rc::new(cfg.clone());
+
+
         
         // async
         let (bot_token, stream_token, active_commands, predictions, irc_stream) = join!(
@@ -82,12 +84,7 @@ impl Bot {
             bot_rx,
         };
 
-        
-        // TODO: remove this empty check in production, b_id could be wrong in config file
-        if bot.cfg.twitch_cfg.broadcaster_id.is_empty() {
-            bot.cfg.twitch_cfg.broadcaster_id = bot.get_broadcaster_id(&bot.cfg.twitch_cfg.channel.clone()).await?;
-            bot.cfg.update_file()?;
-        }
+        bot.update_broadcaster_id().await?;
 
         match bot.irc_stream.connect_to_irc(
             &bot.cfg.twitch_cfg.account,
@@ -108,7 +105,7 @@ impl Bot {
             match self.irc_stream.read_irc() {
                 Ok(messages) => {
                     for message in messages {
-                        if let Some(command) = self.get_command_instance(message.clone()) {
+                        if let Some(command) = self.get_command_instance(message) {
                             self.run_command(command).await;
                         }
                     }
@@ -194,7 +191,7 @@ impl Bot {
         // E.g. The user who called the command or the arguments to the command might differ per use
         match command::validate_and_return_command(option, &mut message) {
             Some(c) => {
-                let mut instance = c.clone();
+                let mut instance = c.clone(); // turn command definition into an instance
                 instance.arguments = arguments;
                 instance.requested_by = Some(message.user);
                 return Some(instance);
@@ -244,10 +241,11 @@ impl Bot {
     }
 
     // TODO: put this somewhere else
-    pub async fn get_broadcaster_id(&mut self, channel: &String) -> Result<String> {
+    pub async fn update_broadcaster_id(&mut self) -> Result<()> {
         // https://dev.twitch.tv/docs/api/reference/#get-users
 
-        let params = [("login", channel)];
+        let areyouthisdumb = &self.cfg.twitch_cfg.channel;
+        let params = [("login", areyouthisdumb)];
         let client = reqwest::Client::new();
         let response = client
             .get(USERS_URL)
@@ -261,7 +259,12 @@ impl Bot {
             200 => {
                 let text = response.text().await?;
                 match serde_json::from_str::<Value>(&text)?["data"][0]["id"].as_str() {
-                    Some(id) => return Ok(id.to_string()),
+                    Some(id) => {
+                        self.cfg.twitch_cfg.broadcaster_id = id.to_string();
+                        self.cfg.update_file()?;
+
+                        Ok(())
+                    },
                     None => {
                         bail!("Field 'id' was not found in the response or was not of type str.")
                     }
@@ -269,7 +272,7 @@ impl Bot {
             }
             401 => {
                 self.stream_token.refresh().await?;
-                return Box::pin(self.get_broadcaster_id(channel)).await; // Dangerous!
+                return Box::pin(self.update_broadcaster_id()).await; // Dangerous!
             }
             other => {
                 bail!("ERROR: Status code was {other} when trying to get the broadcaster ID, expected 200 or 401.")
@@ -427,7 +430,7 @@ impl Bot {
 
             match res {
                 Ok(_) => println!("ended prediction succesfully"),
-                Err(e) => 
+                Err(e) => (),
             }
 
         });

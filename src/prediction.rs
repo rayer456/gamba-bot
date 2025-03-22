@@ -42,8 +42,8 @@ pub struct EndPredictionData {
     pub winning_outcome_id: Option<String>
 }
 
-fn outcome_id_not_exists(x: &Option<String>) -> bool {
-    x.is_none()
+fn outcome_id_not_exists(id: &Option<String>) -> bool {
+    id.is_none()
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -106,10 +106,10 @@ pub struct PredictionFromTwitch {
     #[serde(deserialize_with = "status_deserializer")]
     pub status: PredictionStatus,
 
+    // If Some, convert to some date type
     pub created_at: String,
     pub ended_at: Option<String>,
     pub locked_at: Option<String>,
-
 }
 
 fn status_deserializer<'de, D>(input: D) -> Result<PredictionStatus, D::Error>
