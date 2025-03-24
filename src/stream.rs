@@ -105,7 +105,7 @@ fn is_message_userstate(split_message: &Vec<&str>) -> bool {
 
 fn remove_flags_tag(raw_message: &str) -> String {
     // this only gets rid of the first instance of ;flags=;
-    // so don't make ;flags= a command :)
+    // so don't make ;flags=; a command :)
     raw_message
         .split(';')
         .filter(|part| !part.starts_with("flags="))

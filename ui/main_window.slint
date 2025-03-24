@@ -1,0 +1,109 @@
+import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button } from "std-widgets.slint";
+
+struct FieldData {
+    label: string,
+    id: string,
+    value: string,
+    default_value: string,
+    is_secret: bool,
+}
+
+component ConfigField {
+    in-out property <FieldData> field_data;
+    callback changed_value(string);
+
+    //max-height: 60px;
+
+    init => {
+        debug("Created Config Field");
+    }
+
+
+    VerticalLayout {
+        min-height: 40px;
+        padding-bottom: 20px;
+
+        Text {
+            text: field_data.label;
+            vertical-alignment: bottom;
+            font-weight: 700;
+
+        }
+        line_edit := LineEdit {
+            input-type: field_data.is_secret ? InputType.password : InputType.text;
+            text: field_data.value;
+
+            edited(text) => {
+                changed_value(self.text);
+            }
+
+
+            max-height: 20px;
+        }
+    }
+}
+
+
+export component MainWindow inherits Window {
+    min-width: 200px;
+    min-height: 150px;
+    preferred-width: 500px;
+    preferred-height: 550px;
+
+    callback save_settings();
+
+    // Properties read in Rust code
+    in-out property <[FieldData]> config_fields;
+
+
+    TabWidget {
+        Tab {
+            title: "Config";
+
+            ScrollView {
+                VerticalLayout {
+                    padding: 20px;
+                    alignment: space-between;
+    
+                    for config_field[i] in config_fields : ConfigField {
+                        field_data: config-field;
+
+                        // so retarded
+                        changed_value(line_edit_value) => {
+                            config_fields[i].value = line_edit_value;
+                            // debug(config_field.value);
+                        }
+                    }
+
+
+                    HorizontalLayout {
+                        alignment: end;
+
+                        btn := Button {
+                            text: "Save";
+                            min-height: 30px;
+    
+                            min-width: 80px;
+                            max-width: 100px;
+                            preferred-width: 100px;
+                        
+                            clicked => {
+                                root.save_settings();
+                                debug(root.config_fields[5].value);
+                            }
+
+
+                        }
+                    }
+                }
+
+                
+            }
+
+        }
+        Tab {
+            title: "Tab 2";
+        }
+    }
+
+}

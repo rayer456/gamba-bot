@@ -47,8 +47,9 @@ pub struct Bot {
 
 impl Bot {
     pub async fn initialize() -> Result<Self> {
-        let cfg = Config::build("settings.toml")?;
+        let cfg = Config::from_path("settings.toml")?;
 
+        println!("Running {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
         let cfg_rc: Rc<Config> = Rc::new(cfg.clone());
         
@@ -266,6 +267,7 @@ impl Bot {
                 match serde_json::from_str::<Value>(&text)?["data"][0]["id"].as_str() {
                     Some(id) => {
                         *self.cfg.twitch_cfg.broadcaster_id.borrow_mut() = id.to_string();  
+
                         self.cfg.update_file()?;
 
                         Ok(())

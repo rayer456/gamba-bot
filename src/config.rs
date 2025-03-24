@@ -7,13 +7,11 @@ use toml;
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     pub twitch_cfg: TwitchConfig,
-
     // Add other config stuff here later
-    pub version: String,
 }
 
 impl Config {
-    pub fn build(path: &str) -> Result<Config> {
+    pub fn from_path(path: &str) -> Result<Config> {
         let file_contents = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&file_contents.as_str())?;
 
@@ -36,7 +34,6 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             twitch_cfg: TwitchConfig::default(),
-            version: String::default(),
         }
     }
 }

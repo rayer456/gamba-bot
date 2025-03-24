@@ -1,3 +1,5 @@
+// #![windows_subsystem = "windows"]
+
 mod bot;
 mod command;
 mod config;
@@ -23,7 +25,7 @@ pub const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";
 async fn main() -> Result<()> {
     // Authorize first
     env::set_var("RUST_BACKTRACE", "0");
-    let config = config::Config::build("settings.toml")?;
+    let config = config::Config::from_path("settings.toml")?;
     let mut auth_process = authorize::TwitchAuthProcess::create(&config.twitch_cfg);
 
     let yes_authorize = false;
