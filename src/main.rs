@@ -2,7 +2,7 @@
 
 mod bot;
 mod command;
-mod config;
+pub mod config;
 mod message;
 mod authorize;
 mod stream;
@@ -17,6 +17,7 @@ use std::{backtrace, env, time::Duration};
 use anyhow::Result;
 
 use bot::Bot;
+use config::ConfigError;
 use tokio::{spawn, time::sleep};
 
 pub const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";

@@ -1,8 +1,41 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, io, rc::Rc};
 
 use anyhow::{bail, Result};
+use futures::future::ErrInto;
 use serde::{Deserialize, Serialize};
 use toml;
+
+#[derive(Debug)]
+pub enum ConfigError {
+    FileNotFound,
+    FileNotParseable,
+    PermissionDenied,
+    Unknown,
+}
+
+impl From<std::io::Error> for ConfigError {
+    fn from(value: std::io::Error) -> Self {
+        match value.kind() {
+            io::ErrorKind::NotFound => ConfigError::FileNotFound,
+            io::ErrorKind::PermissionDenied => ConfigError::PermissionDenied,
+            _ => ConfigError::Unknown,
+        }
+    }
+}
+
+impl From<toml::de::Error> for ConfigError {
+    fn from(_: toml::de::Error) -> Self {
+        ConfigError::FileNotParseable
+    }
+}
+
+
+impl From<ConfigError> for anyhow::Error {
+    fn from(_value: ConfigError) -> anyhow::Error {
+        anyhow::Error::msg("Config failed LOOOOOOOOOOOOOOL")
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -11,7 +44,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_path(path: &str) -> Result<Config> {
+    pub fn from_path(path: &str) -> Result<Config, ConfigError> {
         let file_contents = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&file_contents.as_str())?;
 
@@ -61,8 +94,8 @@ impl Default for TwitchConfig {
         Self {
             client_id: Default::default(),
             client_secret: Default::default(),
-            redirect_uri: Default::default(),
-            listener: Default::default(),
+            redirect_uri: String::from("http://localhost:8777"),
+            listener: String::from("127.0.0.1:8777"),
             bot_scope: Default::default(),
             stream_scope: Default::default(),
             irc_host: Default::default(),

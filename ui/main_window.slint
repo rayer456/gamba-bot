@@ -4,7 +4,6 @@ struct FieldData {
     label: string,
     id: string,
     value: string,
-    default_value: string,
     is_secret: bool,
 }
 
@@ -20,14 +19,15 @@ component ConfigField {
 
 
     VerticalLayout {
-        min-height: 40px;
-        padding-bottom: 20px;
+        min-height: 80px;
+        max-height: 80px;
+        padding-bottom: 25px;
+        spacing: 3px;
 
         Text {
             text: field_data.label;
-            vertical-alignment: bottom;
+            vertical-alignment: center;
             font-weight: 700;
-
         }
         line_edit := LineEdit {
             input-type: field_data.is_secret ? InputType.password : InputType.text;
@@ -53,8 +53,14 @@ export component MainWindow inherits Window {
     callback save_settings();
 
     // Properties read in Rust code
-    in-out property <[FieldData]> config_fields;
-
+    in-out property <[FieldData]> config_fields: [
+        { label: "Client ID", id: "client_id" },
+        { label: "Client Secret", id: "client_secret", is_secret: true },
+        { label: "Bot Username", id: "account" },
+        { label: "Streamer Username", id: "channel" },
+        { label: "Redirect URI", id: "redirect_uri" },
+        { label: "Listener Address", id: "listener" },
+    ];
 
     TabWidget {
         Tab {
@@ -89,7 +95,6 @@ export component MainWindow inherits Window {
                         
                             clicked => {
                                 root.save_settings();
-                                debug(root.config_fields[5].value);
                             }
 
 
