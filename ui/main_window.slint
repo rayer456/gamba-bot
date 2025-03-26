@@ -126,13 +126,9 @@ export component MainWindow inherits Window {
     popup := PopupWindow {
         close-policy: no-auto-close;
 
-        // preferred-height: 100px;
-        width: 200px;
+        width: root.preferred-width;
         height: 100px;
-        // max-height: 100px;
-        // max-width: 300px;
 
-        max-height: 100px;
         x: parent.width / 2 - self.width / 2;
         y: parent.height / 2 - self.height / 2;
 
@@ -140,7 +136,7 @@ export component MainWindow inherits Window {
             background: #292929;
             opacity: 100%;
             border-radius: 10px;
-            border-color: #1c1c1c;
+            border-color: red;
             border-width: 2px;
         }
 
