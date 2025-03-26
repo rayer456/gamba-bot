@@ -1,4 +1,4 @@
-import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button } from "std-widgets.slint";
+import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button, StandardButton, Slider } from "std-widgets.slint";
 
 struct FieldData {
     label: string,
@@ -14,7 +14,7 @@ component ConfigField {
     //max-height: 60px;
 
     init => {
-        debug("Created Config Field");
+        // debug("Created Config Field");
     }
 
 
@@ -33,10 +33,9 @@ component ConfigField {
             input-type: field_data.is_secret ? InputType.password : InputType.text;
             text: field_data.value;
 
-            edited(text) => {
+            changed text => {
                 changed_value(self.text);
             }
-
 
             max-height: 20px;
         }
@@ -61,10 +60,13 @@ export component MainWindow inherits Window {
         { label: "Redirect URI", id: "redirect_uri" },
         { label: "Listener Address", id: "listener" },
     ];
+    in-out property <bool> show_test_dialog: false;
+
 
     TabWidget {
         Tab {
             title: "Config";
+
 
             ScrollView {
                 VerticalLayout {
@@ -99,16 +101,71 @@ export component MainWindow inherits Window {
 
 
                         }
+
+                        test := Button {
+                            text: "Show me!";
+
+                            clicked => {
+                                root.show_test_dialog = true;
+                                popup.show();
+                            }
+                        }
                     }
                 }
-
-                
             }
+
+
 
         }
         Tab {
             title: "Tab 2";
         }
     }
+
+    // Make separate component for this since the default Dialog component sucks ass
+    popup := PopupWindow {
+        close-policy: no-auto-close;
+
+        // preferred-height: 100px;
+        width: 200px;
+        height: 100px;
+        // max-height: 100px;
+        // max-width: 300px;
+
+        max-height: 100px;
+        x: parent.width / 2 - self.width / 2;
+        y: parent.height / 2 - self.height / 2;
+
+        r := Rectangle {
+            background: #292929;
+            opacity: 100%;
+            border-radius: 10px;
+            border-color: #1c1c1c;
+            border-width: 2px;
+        }
+
+        VerticalLayout {
+            padding: 20px;
+            alignment: center;
+            spacing: 12px;
+
+            Text {
+                wrap: word-wrap;
+                text: "Click OK if you're fkn retarded like this framework";
+            }
+
+            Button {
+                text: "Ok";
+                clicked => {
+                    popup.close();
+                }
+            }
+        }
+
+
+
+    }
+
+
 
 }

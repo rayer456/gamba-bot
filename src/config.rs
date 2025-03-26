@@ -96,15 +96,15 @@ impl Default for TwitchConfig {
             client_secret: Default::default(),
             redirect_uri: String::from("http://localhost:8777"),
             listener: String::from("127.0.0.1:8777"),
-            bot_scope: Default::default(),
-            stream_scope: Default::default(),
-            irc_host: Default::default(),
-            irc_port: Default::default(),
+            bot_scope: String::from("chat:edit+chat:read"),
+            stream_scope: String::from("channel:manage:predictions+moderation:read"),
+            irc_host: String::from("irc.chat.twitch.tv"),
+            irc_port: 6667,
             account: Default::default(),
             channel: Default::default(),
             broadcaster_id: Default::default(),
-            bot_token_path: Default::default(),
-            stream_token_path: Default::default(),
+            bot_token_path: String::from("tokens/bot_token.json"),
+            stream_token_path: String::from("tokens/stream_token.json"),
         }
     }
 }
