@@ -9,7 +9,7 @@ fn main() -> Result<()> {
 
     let main_window = MainWindow::new().unwrap();
 
-    // TODO: Probably show an error to the user
+    // TODO: Probably show an error to the user (Implement a custom Button in slint and trigger it upon these errors)
     let mut cfg = match Config::from_path("settings.toml") {
         Err(e) => {
                 match e {
@@ -18,6 +18,7 @@ fn main() -> Result<()> {
                     ConfigError::FileNotParseable => println!("this ain't valid yaml OR couldn't be parsed to Config object"),
                     ConfigError::Unknown => println!("some unexpected shit happened yo"),
                 };
+                main_window.invoke_show_popup_retard();
                 Config::default()
         },
         Ok(cfg) => {
