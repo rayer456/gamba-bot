@@ -2,6 +2,7 @@ use core::panic;
 use std::fmt::Display;
 
 use std::ops::Deref;
+use std::path::PathBuf;
 use std::process::exit;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -47,7 +48,7 @@ pub struct Bot {
 
 impl Bot {
     pub async fn initialize() -> Result<Self> {
-        let cfg = Config::from_path("settings.toml")?;
+        let cfg = Config::from_path(PathBuf::from("settings.toml"))?;
 
         println!("Running {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 

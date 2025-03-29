@@ -12,7 +12,7 @@ mod prediction;
 mod twitch;
 mod signal;
 
-use std::{backtrace, env, time::Duration};
+use std::{backtrace, env, path::PathBuf, time::Duration};
 
 use anyhow::Result;
 
@@ -26,7 +26,7 @@ pub const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";
 async fn main() -> Result<()> {
     // Authorize first
     env::set_var("RUST_BACKTRACE", "0");
-    let config = config::Config::from_path("settings.toml")?;
+    let config = config::Config::from_path(PathBuf::from("settings.toml"))?;
     let mut auth_process = authorize::TwitchAuthProcess::create(&config.twitch_cfg);
 
     let yes_authorize = false;

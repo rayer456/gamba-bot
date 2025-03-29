@@ -1,7 +1,8 @@
-use std::{env, process::exit, rc::Rc};
+use std::{env, fs, path::{Path, PathBuf}, process::exit, rc::Rc};
 use anyhow::Result;
-use slint::SharedString;
-use gamba_bot::config::{self, Config, ConfigError};
+use futures::stream::PollNext;
+use slint::{ComponentHandle, LogicalSize, SharedString};
+use gamba_bot::{config::{self, Config, ConfigError}, helpers};
 
 slint::include_modules!();
 fn main() -> Result<()> {
@@ -9,31 +10,65 @@ fn main() -> Result<()> {
 
     let main_window = MainWindow::new().unwrap();
 
-    // TODO: Probably show an error to the user (Implement a custom Button in slint and trigger it upon these errors)
-    let mut cfg = match Config::from_path("settings.toml") {
-        Err(e) => {
-                match e {
-                    ConfigError::FileNotFound => println!("settings not found yo"),
-                    ConfigError::PermissionDenied => println!("not allowed to read yo"),
-                    ConfigError::FileNotParseable => println!("this ain't valid yaml OR couldn't be parsed to Config object"),
-                    ConfigError::Unknown => println!("some unexpected shit happened yo"),
-                };
-                main_window.invoke_show_popup_retard();
-                Config::default()
-        },
-        Ok(cfg) => {
-            println!("settings seem okay :o");
-            cfg
-        }
-    };    
+    /*
+    Setting file found:
+        Try reading and parsing:
+            Cannot parse => use default config + save to existing path
+            Can parse => use config
+    Setting file not found:
+        Try saving default config in APPDATA OR program directory:
+            Create subfolders as needed
+            Try saving:
+                If fails, undo created directories, try secondary path
+                If both paths fail:
+                    Continue with default, show user message of failure
+    */
 
-    // TODO: Add some advanced settings
-
-    //let shit = TestDialog::new().unwrap().show();
-
-    // Show testing dialog
-    // main_window.set_show_test_dialog(true);
+    let mut empty_path = false;
+    let mut cfg = match config::find_settings_path() {
+        // SETTING FILE FOUND
+        Some(settings_path) => match Config::from_path(settings_path.clone()) {
+            Err(e) => {
+                    let mut show_error_message = true;
+                    let msg = match e {
+                        ConfigError::FileNotFound => { // shouldn't even be possible
+                            show_error_message = false;
+                            "settings not found yo"
+                        },
+                        ConfigError::PermissionDenied => "permission error",
+                        ConfigError::FileNotParseable => "invalid configuration",
+                        ConfigError::Unknown => "unknown error",
+                    };
+                    if show_error_message {
+                        main_window.set_popup_text(format!("Failed to load the config: {}", msg).into());
+                        main_window.set_show_popup(true);
+                    }
     
+                    let mut cfg = Config::default();
+                    cfg.save_path = settings_path;
+                    let _ = cfg.update_file();
+                    cfg
+            },
+            Ok(cfg) => {
+                println!("settings seem okay :o");
+                cfg
+            }
+        },
+        // SETTING FILE NOT FOUND
+        None => {
+            let path1 = env::var("APPDATA").map_or_else(|_| "./".into(), |s| PathBuf::from(s).join("gamba-bot")).join("config/settings.toml");
+            let path2 = PathBuf::from("./config/settings.toml");
+            match config::try_saving_config_here([path1, path2]) {
+                Ok(cfg) => cfg,
+                _ => {
+                    empty_path = true;
+                    Config::default()
+                }
+            }
+        }
+    };
+
+
     let mut config_fields: Vec<FieldData> = main_window.get_config_fields().iter().collect();
     populate_config_fields(&mut config_fields, &cfg);
 
@@ -46,16 +81,23 @@ fn main() -> Result<()> {
         let config_fields: Vec<FieldData> = main_window.get_config_fields().iter().collect();
         update_cfg_with_fields(&config_fields, &mut cfg);
         if let Err(e) = cfg.update_file() {
-            println!("Unable to save settings: {e}");
+            main_window.set_popup_text(format!("Unable to save settings: {e}").into());
+            main_window.set_show_popup(true);
         }
-
     });
 
+    if empty_path {
+        main_window.set_popup_text("Failed to find a path. Settings won't be saved.".into());
+        main_window.set_show_popup(true);
+    }
 
+    
     main_window.run().unwrap();
 
     Ok(())
 }
+
+
 
 fn populate_config_fields(config_fields: &mut Vec<FieldData>, cfg: &Config) {
     for field_data in config_fields {
@@ -87,3 +129,4 @@ fn update_cfg_with_fields(config_fields: &Vec<FieldData>, cfg: &mut Config) {
         };
     }
 }
+

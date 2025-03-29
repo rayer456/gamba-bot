@@ -48,12 +48,13 @@ export component MainWindow inherits Window {
     min-height: 150px;
     preferred-width: 500px;
     preferred-height: 550px;
-
+    
+    
     callback save_settings();
+    callback on_resize(); 
 
-    public function show_popup_retard() {
-        popup.show();
-    }
+    in-out property <bool> show_popup: false;
+    in-out property <string> popup_text;
 
     // Properties read in Rust code
     in-out property <[FieldData]> config_fields: [
@@ -64,9 +65,16 @@ export component MainWindow inherits Window {
         { label: "Redirect URI", id: "redirect_uri" },
         { label: "Listener Address", id: "listener" },
     ];
-    in-out property <bool> show_test_dialog: false;
-    in-out property <bool> show_popup: false;
     
+    // Hack to redraw popup on window change since changing x of popup doesn't fucking work fucking retarded
+    my_timer := Timer {
+        interval: 1000ms;
+        running: root.show_popup;
+        triggered() => {
+            popup.show();
+        }
+    }
+
 
     TabWidget {
         Tab {
@@ -108,11 +116,10 @@ export component MainWindow inherits Window {
                         }
 
                         test := Button {
-                            text: "Show me!";
-
+                            text: "Show me";
                             clicked => {
-                                root.show_test_dialog = true;
-                                // popup.show();
+                                root.popup_text = "You shouldn't see this :)";
+                                root.show_popup = true;
                             }
                         }
                     }
@@ -133,9 +140,9 @@ export component MainWindow inherits Window {
 
         width: 200px;
         height: 100px;
-
-        x: parent.width / 2 - self.width / 2;
         y: parent.height / 2 - self.height / 2;
+        x: parent.width / 2 - self.width / 2;
+
 
         r := Rectangle {
             background: #292929;
@@ -152,18 +159,17 @@ export component MainWindow inherits Window {
 
             Text {
                 wrap: word-wrap;
-                text: "Click OK if you're fkn retarded like this framework";
+                text: root.popup_text;
             }
 
             Button {
                 text: "Ok";
                 clicked => {
-                    // TODO: does order matter?
                     popup.close();
+                    root.show_popup = false;
                 }
             }
         }
-
 
 
     }

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, io, rc::Rc};
+use std::{cell::RefCell, env, fs, io, path::{Path, PathBuf}, rc::Rc};
 
 use anyhow::{bail, Result};
 use futures::future::ErrInto;
@@ -41,19 +41,38 @@ impl From<ConfigError> for anyhow::Error {
 pub struct Config {
     pub twitch_cfg: TwitchConfig,
     // Add other config stuff here later
+
+    #[serde(skip)]
+    pub save_path: PathBuf,
 }
 
 impl Config {
-    pub fn from_path(path: &str) -> Result<Config, ConfigError> {
-        let file_contents = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&file_contents.as_str())?;
+    pub fn from_path(path: PathBuf) -> Result<Config, ConfigError> {
+        let file_contents = std::fs::read_to_string(&path)?;
+        let mut config: Config = toml::from_str(&file_contents.as_str())?;
+        config.save_path = path;
 
         Ok(config)
     }
 
+    pub fn try_saving_default(path: PathBuf) -> Result<Config> {
+        let mut cfg = Config::default();
+        cfg.save_path = path.clone();
+        let Some(parent_dirs) = path.parent() else { bail!("failed to create parent dirs") };
+        let _ = fs::create_dir_all(parent_dirs);
+        match cfg.update_file() {
+            Ok(_) => return Ok(cfg),
+            _ => {
+                // should remove unused directories but fuck it
+                bail!("Failed to save lol");
+            },
+        };
+    }
+
     pub fn update_file(&self) -> Result<()> {
+        println!("Trying to write to {:?}", &self.save_path);
         match toml::to_string(self) {
-            Ok(deser) => std::fs::write("settings.toml", deser.as_bytes())?,
+            Ok(deser) => std::fs::write(&self.save_path, deser.as_bytes())?,
             Err(e) => bail!(e),
         };
 
@@ -67,6 +86,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             twitch_cfg: TwitchConfig::default(),
+            save_path: PathBuf::default(),
         }
     }
 }
@@ -107,4 +127,30 @@ impl Default for TwitchConfig {
             stream_token_path: String::from("tokens/stream_token.json"),
         }
     }
+}
+
+pub fn find_settings_path() -> Option<PathBuf> {
+    if let Ok(appdata_path) = env::var("APPDATA") {
+        let settings_path = PathBuf::from(appdata_path).join("gamba-bot/config/settings.toml");
+        if settings_path.exists() {
+            return Some(settings_path);
+        }
+    }
+
+    let settings_path = PathBuf::from("./config/settings.toml");
+    if settings_path.exists() {
+        return Some(settings_path);
+    }
+    
+    None
+}
+
+pub fn try_saving_config_here(paths: [PathBuf; 2]) -> Result<Config> {
+    for path in paths {
+        if let Ok(cfg) = Config::try_saving_default(path) {
+            return Ok(cfg);
+        }
+    }
+
+    bail!("Couldn't save config anywhere wtf");
 }
