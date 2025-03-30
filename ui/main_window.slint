@@ -1,4 +1,4 @@
-import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button, StandardButton, Slider } from "std-widgets.slint";
+import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button, StandardButton, Slider, ComboBox, ListView, StandardListView, GroupBox } from "std-widgets.slint";
 
 struct FieldData {
     label: string,
@@ -77,6 +77,8 @@ export component MainWindow inherits Window {
 
 
     TabWidget {
+        current-index: 0;
+
         Tab {
             title: "Config";
 
@@ -129,8 +131,56 @@ export component MainWindow inherits Window {
 
 
         }
-        Tab {
+        prediction_manager_tab := Tab {
             title: "Tab 2";
+
+            HorizontalLayout {
+                
+                left_side := VerticalLayout {
+                    width: parent.width * 50%;
+                    spacing: 30px;
+
+                    make_active := HorizontalLayout {
+                        Button {
+                            text: "make active";
+                        }
+                        Text {
+                            text: "active: game name - cat name";
+                        }
+                    }
+
+                    game_cat := HorizontalLayout {
+                        game_section := VerticalLayout {
+                            Text {
+                                text: "Game";
+                            }
+                            ComboBox {
+                                model: ["gta 5", "gta 6"];
+                            }
+                        }
+                        cat_section := VerticalLayout {
+                            Text {
+                                text: "Category";
+                            }
+                            ComboBox {
+                                model: ["any%", "100%"];
+                            }
+                        }
+                    }
+
+
+                    
+                    
+
+                }
+
+                right_side := VerticalLayout {
+                    width: parent.width * 50%;
+                    Rectangle {
+                        background: blue;
+                    }
+                }
+            }
         }
     }
 
@@ -170,10 +220,6 @@ export component MainWindow inherits Window {
                 }
             }
         }
-
-
     }
-
-
-
 }
+ 
