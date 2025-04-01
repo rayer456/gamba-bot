@@ -1,0 +1,22 @@
+import { LineEdit } from "std-widgets.slint";
+export component PredictionField inherits HorizontalLayout {
+    callback field_value_changed(val: string);
+    in property <string> field_name: "default";
+
+    padding-bottom: 0px; // padding needs to be defined to access it?
+    Text {
+        text: field_name;
+        vertical-alignment: center;
+        width: 100px;
+    }
+    LineEdit {
+        text: "testing your shit application";
+        min-height: 25px; // min and max height needs to be defined on text or lineedit to work for both?
+        max-height: 40px;
+        preferred-height: 30px;
+        changed text => {
+            debug("lineedit height", self.height);
+            field_value_changed(self.text);
+        }
+    }
+}

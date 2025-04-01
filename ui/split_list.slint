@@ -5,29 +5,28 @@ struct DataObject {
     text: string,
     background: color,
     color: color,
+    
 }
 
-export component Test {
-    width: 350px;
-    height: 300px;
+export component SplitList {
+
 
     in-out property <DataObject> selected_split <=> split_list.selected;
     in-out property <int> selected_split_index <=> split_list.selected_index;
 
     VerticalLayout {
-        padding: 20px;
 
         Rectangle {
-            background: blue;
-            border-color: pink;
+            background: gray;
+            border-color: orange;
             border-width: 2px;
 
             VerticalLayout {
                 padding: 20px;
+                padding-top: 0px;
 
                 GroupBox {
-                    width: 100%;
-                    title: "My list";
+                    title: "Splits";
 
                     split_list := ListView {
                         in-out property <[DataObject]> objects: [
@@ -41,6 +40,9 @@ export component Test {
                 
                         for data[i] in objects : rec :=
                         Rectangle {
+                            background: data.background;
+                            height: 25px;
+
                             states [
                                 active-hover when ta.has-hover: {
                                     rec.background: pink;
@@ -58,16 +60,21 @@ export component Test {
                                 //     root.background: gray;
                                 // }
                             ]
-
-                            background: data.background;
-                            opacity: 80%;
                             HorizontalLayout {
-                                padding-left: 10px;
+                                padding-left: 3px;
                                 alignment: start;
+                                spacing: 6px;
+                                
+                                if split_list.selected_index == i: Image {
+                                    source: @image-url("icons/star.png");
+                                    // colorize: white;
+                                    width: 16px;
+                                }
                                 Text {
                                     text: data.text;
                                     font-weight: 700;
                                     color: black;
+                                    vertical-alignment: center;
                                 }
                             }
                             

@@ -1,4 +1,6 @@
-import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button, StandardButton, Slider, ComboBox, ListView, StandardListView, GroupBox } from "std-widgets.slint";
+import { LineEdit, HorizontalBox, ScrollView, TabWidget, VerticalBox, Button, StandardButton, Slider, ComboBox, ListView, StandardListView, GroupBox, CheckBox } from "std-widgets.slint";
+import { SplitList } from "split_list.slint";
+import { PredictionField } from "prediction_field.slint";
 
 struct FieldData {
     label: string,
@@ -46,8 +48,8 @@ component ConfigField {
 export component MainWindow inherits Window {
     min-width: 200px;
     min-height: 150px;
-    preferred-width: 500px;
-    preferred-height: 550px;
+    preferred-width: 970px;
+    preferred-height: 770px;
     
     
     callback save_settings();
@@ -65,6 +67,11 @@ export component MainWindow inherits Window {
         { label: "Redirect URI", id: "redirect_uri" },
         { label: "Listener Address", id: "listener" },
     ];
+
+    changed width => {
+        debug("width: ", root.width);
+        debug("height: ", root.height);
+    }
     
     // Hack to redraw popup on window change since changing x of popup doesn't fucking work fucking retarded
     my_timer := Timer {
@@ -77,7 +84,7 @@ export component MainWindow inherits Window {
 
 
     TabWidget {
-        current-index: 0;
+        current-index: 1;
 
         Tab {
             title: "Config";
@@ -133,29 +140,37 @@ export component MainWindow inherits Window {
         }
         prediction_manager_tab := Tab {
             title: "Tab 2";
+            property <length> pm_padding: 20px;
 
             HorizontalLayout {
-                
+                width: 100%;
+
                 left_side := VerticalLayout {
+                    padding: pm_padding;
                     width: parent.width * 50%;
                     spacing: 30px;
 
                     make_active := HorizontalLayout {
+                        spacing: 20px;
                         Button {
                             text: "make active";
                         }
                         Text {
+                            vertical-alignment: center;
+                            font-weight: 600;
                             text: "active: game name - cat name";
                         }
                     }
 
                     game_cat := HorizontalLayout {
+                        spacing: 20px;
                         game_section := VerticalLayout {
                             Text {
                                 text: "Game";
                             }
+
                             ComboBox {
-                                model: ["gta 5", "gta 6"];
+                                model: ["fdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlk", "shit"];
                             }
                         }
                         cat_section := VerticalLayout {
@@ -168,16 +183,84 @@ export component MainWindow inherits Window {
                         }
                     }
 
-
-                    
-                    
-
+                    SplitList {
+                        
+                    }
                 }
 
                 right_side := VerticalLayout {
                     width: parent.width * 50%;
-                    Rectangle {
-                        background: blue;
+                    padding: pm_padding;
+
+                    // change type later to some custom struct
+                    in-out property <[string]> pred_fields : [
+                        "Title",
+                        "Outcome 1",
+                        "Outcome 2",
+                        "Outcome 3",
+                        "Outcome 4",
+                        "Outcome 5",
+                        "Outcome 6",
+                        "Outcome 7",
+                        "Outcome 8",
+                        "Outcome 9",
+                        "Outcome 10",
+                        "Time Window", // probably not a string field
+                    ];
+                    
+                    fields := VerticalLayout {
+                        spacing: 6px;
+                        padding-bottom: 20px;
+                        // alignment: start; // TODO probably remove this shit for responsiveness
+                        
+                        name_field := PredictionField {
+                            field_name: "Name";
+                        }
+
+                        auto_start_check := HorizontalLayout {
+                            height: 30px;
+                            Text {
+                                text: "Auto start";
+                                vertical-alignment: center;
+                                width: 100px;
+                            }
+                            CheckBox {
+                        
+                            }
+                        }
+
+                        split_name_field := PredictionField {
+                            field_name: "Split name";
+                            padding-bottom: 30px;
+                            field_value_changed(val) => {
+                                debug(val);
+                            }
+                        }
+
+                        for pred_field[i] in pred_fields : PredictionField {
+                            field_name: pred-field;
+                        }
+
+                    }
+
+                    HorizontalLayout {
+                        spacing: 50px;
+                        alignment: center;
+                        Button {
+                            max-width: 120px;
+                            max-height: 70px;
+                            preferred-width: 100px;
+                            preferred-height: 20px;
+                            text: "Save";
+                        }
+
+                        Button {
+                            max-width: 120px;
+                            max-height: 70px;
+                            preferred-width: 100px;
+                            preferred-height: 50px;
+                            text: "Delete";
+                        }
                     }
                 }
             }
