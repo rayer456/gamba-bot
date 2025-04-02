@@ -1,18 +1,17 @@
-
 import { ListView, GroupBox, StandardListView, Button } from "std-widgets.slint";
 
 struct DataObject {
-    text: string,
-    background: color,
-    color: color,
-    
+    split_name: string,
+    has_prediction: bool,
+
 }
 
 export component SplitList {
+    callback selected_changed;
 
+    in-out property <DataObject> selected_split;
+    in-out property <int> selected_split_index: -1;
 
-    in-out property <DataObject> selected_split <=> split_list.selected;
-    in-out property <int> selected_split_index <=> split_list.selected_index;
 
     VerticalLayout {
 
@@ -30,26 +29,24 @@ export component SplitList {
 
                     split_list := ListView {
                         in-out property <[DataObject]> objects: [
-                            { text: "item 1", background: Colors.red, color: Colors.white },
-                            { text: "item 2", background: Colors.red, color: Colors.white },
-                            { text: "item 3", background: Colors.red, color: Colors.white },
+                            { split_name: "item 1" },
+                            { split_name: "item 2" },
+                            { split_name: "item 3" },
+                            { split_name: "item 4" },
                         ];
-
-                        in-out property <DataObject> selected;
-                        in-out property <int> selected_index: -1;
                 
                         for data[i] in objects : rec :=
                         Rectangle {
-                            background: data.background;
+                            background: #161d27;
                             height: 25px;
 
                             states [
                                 active-hover when ta.has-hover: {
-                                    rec.background: pink;
+                                    rec.background: #0f1319;
                                 }
 
-                                selected when split_list.selected_index == i: {
-                                    rec.background: Colors.pink;
+                                selected when root.selected_split_index == i: {
+                                    rec.background: #0f1319;
                                 }
                                 // active-hover when active && ta.has-hover: {
                                 //     label.text: "Active\nHover";
@@ -65,24 +62,26 @@ export component SplitList {
                                 alignment: start;
                                 spacing: 6px;
                                 
-                                if split_list.selected_index == i: Image {
+                                if root.selected_split_index == i: Image {
                                     source: @image-url("icons/star.png");
                                     // colorize: white;
                                     width: 16px;
                                 }
                                 Text {
-                                    text: data.text;
+                                    text: data.split_name;
                                     font-weight: 700;
-                                    color: black;
+                                    color: white;
                                     vertical-alignment: center;
                                 }
                             }
                             
                             ta := TouchArea {
+                                mouse-cursor: pointer;
                                 clicked => {
-                                    split_list.selected = data;
-                                    split_list.selected_index = i;
-                                    // parent.background = Colors.green;
+                                    root.selected_split = data;
+                                    root.selected_split_index = i;
+                                    
+                                    root.selected_changed();
                                 }
                             }
 
@@ -96,7 +95,7 @@ export component SplitList {
             text: "click me";
             clicked => {
                 debug("Selected index is ", root.selected_split_index);
-                debug("Selected item is: ", root.selected_split.text);
+                debug("Selected item is: ", root.selected_split.split_name);
             }
         }
     }

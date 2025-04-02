@@ -165,12 +165,16 @@ export component MainWindow inherits Window {
                     game_cat := HorizontalLayout {
                         spacing: 20px;
                         game_section := VerticalLayout {
+                            height: 40px;
                             Text {
+                                max-height: 40px;
+                                
                                 text: "Game";
                             }
 
                             ComboBox {
-                                model: ["fdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlkfdsajfklasjdmklfasjdmklfdsa\njklmfsadkljmfkjdlakdfjlmsamlk", "shit"];
+                                max-height: 40px;
+                                model: ["Red Dead Redemption 2", "shit"];
                             }
                         }
                         cat_section := VerticalLayout {
@@ -184,7 +188,10 @@ export component MainWindow inherits Window {
                     }
 
                     SplitList {
-                        
+                        selected_changed => {
+                            debug("from root: item changed, index is now ", self.selected_split_index);
+                            name_field.value = "";
+                        }
                     }
                 }
 
@@ -238,6 +245,8 @@ export component MainWindow inherits Window {
                         }
 
                         for pred_field[i] in pred_fields : PredictionField {
+                            // TODO create a similar live update function like with config fields
+                            
                             field_name: pred-field;
                         }
 
