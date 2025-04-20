@@ -49,6 +49,7 @@ pub struct Bot {
 impl Bot {
     pub async fn initialize() -> Result<Self> {
         let cfg = Config::from_path(PathBuf::from("settings.toml"))?;
+        
 
         println!("Running {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 

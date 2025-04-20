@@ -120,11 +120,13 @@ impl TwitchAuthProcess {
             ("grant_type", &"authorization_code".to_string()),
             ("redirect_uri", &self.cfg.redirect_uri),
         ];
-        let response = self.http_client
+        let req = self.http_client
             .post(TWITCH_TOKEN_URL)
-            .header(CONTENT_TYPE, "x-www-form-urlencoded")
-            .form(&params)
-            .send().await;
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")  
+            .form(&params);
+        
+        let response = req.send().await;
+
 
         match response {
             Ok(res) => {

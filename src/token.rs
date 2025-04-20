@@ -1,11 +1,12 @@
 use anyhow::{bail, Result};
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{rc::Rc, time::{Duration, Instant, SystemTime}};
 
-use crate::{config::Config, TOKEN_ENDPOINT};
+use crate::config::Config;
 
 const VALIDATION_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/validate";
+const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";
 
 pub enum TokenType {
     Streamer,
@@ -65,7 +66,7 @@ impl Token {
         let client = reqwest::Client::new();
         let response = client
             .post(TOKEN_ENDPOINT)
-            .header(CONTENT_TYPE, "x-www-form-urlencoded")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .form(&params)
             .send()
             .await;

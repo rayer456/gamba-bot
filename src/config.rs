@@ -37,7 +37,7 @@ impl From<ConfigError> for anyhow::Error {
 }
 
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
     pub twitch_cfg: TwitchConfig,
     // Add other config stuff here later
@@ -91,7 +91,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TwitchConfig {
     pub client_id: String,
     pub client_secret: String,

@@ -20,7 +20,6 @@ use bot::Bot;
 use config::ConfigError;
 use tokio::{spawn, time::sleep};
 
-pub const TOKEN_ENDPOINT: &'static str = "https://id.twitch.tv/oauth2/token";
 
 #[tokio::main]
 async fn main() -> Result<()> {
