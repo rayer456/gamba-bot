@@ -193,7 +193,7 @@ impl Bot {
     }
 
     pub fn get_command_instance(&mut self, mut message: Message) -> Option<Command> {
-        let (option, arguments) = self.find_command_by_message(&message);
+        let (option, arguments) = command::find_command_by_message(&mut self.active_commands, &message);
 
         // Create an instance of the given command
         // An instance of a command might be different for each instance
@@ -221,19 +221,7 @@ impl Bot {
         };
     }
 
-    pub fn find_command_by_message(&mut self, msg: &Message) -> (Option<&mut Command>, Vec<String>) {
-        let split_message: Vec<String> = msg.message.split(' ').map(|m| m.to_string()).collect();
-
-        if let Some((command, arguments)) = split_message.split_first() {
-            for active_command in &mut self.active_commands {
-                if *command == active_command.cmd || active_command.alternative_cmds.contains(command) {
-                    return (Some(active_command), arguments.to_vec());
-                }
-            }
-        }
-        (None, Vec::new())
-    }
-
+    // TODO: probably remove
     pub fn find_command_by_cmd(&mut self, cmd: String) -> Option<Command> {
         for active_command in self.active_commands.iter() {
             if cmd == active_command.cmd || active_command.alternative_cmds.contains(&cmd) {
@@ -308,32 +296,16 @@ impl Bot {
             return;
         }
 
-
         match pred_variant {
-            PredCmd::Start => self.send_create_prediction_signal(command).await,
+            PredCmd::Start => self.cmd_create_prediction(command).await,
             PredCmd::Invalid => (),
 
-            // end pred
+            // cancel, outcome, lock
             _ => self.send_end_prediction_signal(command, pred_variant).await,
-            
-            // Any other variant is a call to the end prediction endpoint
-            // other => { 
-            //     // Parse further into a proper object
-            //     let Ok(latest_pred_str) = self.twitch_client.get_latest_prediction(common_paras.clone(), command.clone()).await else { return; };
-
-            //     println!("{latest_pred_str}");
-            //     //exit(1);
-
-            //     match other {
-            //         PredCmd::Lock => 
-            //     }
-                
-            // }
         }
     }
 
-    async fn send_create_prediction_signal(&mut self, command: Command) {
-
+    async fn cmd_create_prediction(&mut self, command: Command) {
         let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
 
         let Some(prediction_name) = command.get_nth_argument(1) else {
@@ -341,13 +313,10 @@ impl Bot {
             return;
         };
 
-        // TODO: remove prediction_name_exists and just search by name and return an option
-        if !prediction::prediction_name_exists(&self.loaded_predictions, &prediction_name) {
+        let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { 
             self.chat(format!("Prediction {prediction_name} not found. Available predictions: {preds_str}"));
             return;
-        }
-
-        let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { return };
+        };
 
         spawn(twitch::create_prediction(
             self.http_client.clone(),
@@ -363,7 +332,7 @@ impl Bot {
 
         let latest_pred = match twitch::get_latest_prediction(
                 self.http_client.clone(),
-                self.get_common_twitch_parameters(), 
+                self.get_common_twitch_parameters(),
                 self.tx_to_bot.clone(),
                 command.clone(),
             ).await {

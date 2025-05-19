@@ -20,7 +20,7 @@ impl From<&str> for PredictionCommandVariant {
             "OUTCOME" => PredictionCommandVariant::Outcome,
             "CANCEL" => PredictionCommandVariant::Cancel,
             _ => {
-                // log this
+                // log this as warning
                 return PredictionCommandVariant::Invalid
             },
         }
