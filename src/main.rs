@@ -11,6 +11,8 @@ mod helpers;
 mod prediction;
 mod twitch;
 mod signal;
+mod websocket;
+mod eventsub;
 
 use std::{backtrace, env, path::PathBuf, time::Duration};
 

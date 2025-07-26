@@ -12,18 +12,18 @@ use std::time::Duration;
 
 use crate::command::{self, Command};
 use crate::config::Config;
+use crate::eventsub::{self, EventsubClientError, WSAction};
 use crate::message::User;
 use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd};
 use crate::signal::{BotSignal, PredictionStatus, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
+use crate::websocket::WSResponse;
 use crate::{message::Message, stream::Stream};
 use crate::token::TokenType;
 
 use anyhow::{bail, Result};
 
-use futures::stream::PollNext;
-use rand::Rng;
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use serde_json::Value;
@@ -44,6 +44,7 @@ pub struct Bot {
     http_client: Client,
     tx_to_bot: TokioSender<TwitchApiSignal>,
     pub bot_rx: TokioReceiver<TwitchApiSignal>, // TODO: doesn't need to be tokioreceiver
+    evs_receiver: TokioReceiver<Result<WSAction, EventsubClientError>>,
 }
 
 impl Bot {
@@ -75,7 +76,9 @@ impl Bot {
         );
 
         // API channels
-        // let (_, rx_from_bot) = tokio::sync::mpsc::channel(32);
+        let (evs_sender, evs_receiver) = tokio::sync::mpsc::channel(64);
+        eventsub::run_eventsub_client(evs_sender); // TODO: should probably have some kind of handler to this thread
+
         let (tx_to_bot, bot_rx) = tokio::sync::mpsc::channel(32);
 
         // let twitch_client = TwitchApiClient::new(rx_from_bot, tx_to_bot);
@@ -92,6 +95,7 @@ impl Bot {
             http_client: Client::new(),
             tx_to_bot,
             bot_rx,
+            evs_receiver,
         };
 
         bot.update_broadcaster_id().await?;
@@ -150,8 +154,11 @@ impl Bot {
                 }
             }
 
-            // read the channel
-            self.read_channels().await;
+            // TODO: Try receiving eventsub messages
+
+            // read the channels
+            self.read_twitch_channel().await;
+            self.read_evs_channel().await;
 
             // hourly token validation
             self.stream_token.validate_if_invalid().await;
@@ -159,7 +166,7 @@ impl Bot {
         }
     }
 
-    async fn read_channels(&mut self) {
+    async fn read_twitch_channel(&mut self) {
         if let Ok(signal) = self.bot_rx.try_recv() {
             match signal {
                 TwitchApiSignal::Unauthorized { command, reason } => self.respond_to_invalid_token(command, reason).await,
@@ -170,6 +177,25 @@ impl Bot {
                 TwitchApiSignal::PredictionCreated => println!("INFO: created prediction via API"),
                 _ => ()
             }
+        }
+    }
+
+    async fn read_evs_channel(&mut self) {
+        if let Ok(action_or_error) = self.evs_receiver.try_recv() {
+            // Do things based on action and log errors for now
+            // Probably create new function in bot to handle actions? Or at least define said actions
+            if let Ok(action) = action_or_error {
+                match action {
+                    WSAction::SessionWelcome(session_id) => println!("Session ID: {session_id}"),
+                    WSAction::SessionKeepAlive => println!("keep alive message"),
+
+                    // Check electrobot
+                    WSAction::Notification => (),
+                    WSAction::SessionReconnect => (),
+                    WSAction::Revocation => (),
+                };
+
+            };
         }
     }
 

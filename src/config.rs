@@ -145,7 +145,7 @@ pub fn find_settings_path() -> Option<PathBuf> {
     None
 }
 
-pub fn try_saving_config_here(paths: [PathBuf; 2]) -> Result<Config> {
+pub fn try_saving_default_config_here(paths: [PathBuf; 2]) -> Result<Config> {
     for path in paths {
         if let Ok(cfg) = Config::try_saving_default(path) {
             return Ok(cfg);

@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         None => {
             let path1 = env::var("APPDATA").map_or_else(|_| "./".into(), |s| PathBuf::from(s).join("gamba-bot")).join("config/settings.toml");
             let path2 = PathBuf::from("./config/settings.toml");
-            match config::try_saving_config_here([path1, path2]) {
+            match config::try_saving_default_config_here([path1, path2]) {
                 Ok(cfg) => cfg,
                 _ => {
                     empty_path = true;
@@ -88,7 +88,7 @@ fn main() -> Result<()> {
     });
 
     if empty_path {
-        main_window.set_popup_text("Failed to find a path. Settings won't be saved.".into());
+        main_window.set_popup_text("Failed to find a valid path. Settings won't be saved.".into());
         main_window.set_show_popup(true);
     }
 
