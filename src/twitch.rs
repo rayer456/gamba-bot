@@ -5,8 +5,7 @@ use reqwest::{header::{AUTHORIZATION, CONTENT_TYPE}, Client};
 use serde_json::Value;
 use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
 
-use crate::{command::Command, prediction::{self, EndPredictionData, Prediction, PredictionFromTwitch}, signal::{BotSignal, TwitchApiSignal}};
-use crate::signal::PredictionStatus;
+use crate::{command::Command, prediction::{self, EndPredictionData, Prediction, PredictionFromTwitch, PredictionStatus}, signal::{BotSignal, TwitchApiSignal}};
 
 const PREDICTIONS_URL: &'static str = "https://api.twitch.tv/helix/predictions";
 

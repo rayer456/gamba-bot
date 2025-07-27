@@ -3,7 +3,6 @@ use serde::{de, Deserialize};
 use std::fmt::{self, Display};
 
 use anyhow::{bail, Result};
-use serde_yaml::Value;
 use std::time::{Duration, SystemTime};
 
 use crate::message::{Group, Message, RecentUser, User};

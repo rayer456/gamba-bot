@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::{command::Command, message::User, prediction::Prediction, twitch::TwitchCommonParameters};
+use crate::{command::Command, message::User, prediction::{Prediction, PredictionStatus}, twitch::TwitchCommonParameters};
 
 pub enum BotSignal {
     CreatePrediction {
@@ -14,17 +14,6 @@ pub enum BotSignal {
         status: PredictionStatus,
         id: String,
     }
-}
-
-// TODO: MOVE TO PREDICTION.RS
-#[derive(Clone, Debug, Deserialize)]
-pub enum PredictionStatus {
-    Active,
-    Locked,
-    Canceled,
-    Resolved {
-        winning_outcome_id: Option<String>
-    },
 }
 
 

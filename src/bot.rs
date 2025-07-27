@@ -14,8 +14,8 @@ use crate::command::{self, Command};
 use crate::config::Config;
 use crate::eventsub::{self, EventsubClientError, WSAction};
 use crate::message::User;
-use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd};
-use crate::signal::{BotSignal, PredictionStatus, TwitchApiSignal};
+use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd, PredictionStatus};
+use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
 use crate::websocket::WSResponse;
@@ -186,11 +186,11 @@ impl Bot {
             // Probably create new function in bot to handle actions? Or at least define said actions
             if let Ok(action) = action_or_error {
                 match action {
-                    WSAction::SessionWelcome(session_id) => println!("Session ID: {session_id}"),
+                    WSAction::SessionWelcome { session_id } => println!("Session ID: {session_id}"), // TODO: handle session event
                     WSAction::SessionKeepAlive => println!("keep alive message"),
 
                     // Check electrobot
-                    WSAction::Notification => (),
+                    WSAction::Notification { event_type } => (), // TODO: handle 3 different events
                     WSAction::SessionReconnect => (),
                     WSAction::Revocation => (),
                 };

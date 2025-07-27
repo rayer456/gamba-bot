@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use serde::{de, Deserialize, Serialize};
 
-use crate::signal::PredictionStatus;
 
 #[derive(PartialEq)]
 pub enum PredictionCommandVariant { // kinda shit name
@@ -62,11 +61,27 @@ pub struct CreatePredictionData {
     pub broadcaster_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub enum PredictionStatus {
+    Active,
+    Locked,
+    Canceled,
+    Resolved {
+        winning_outcome_id: Option<String>
+    },
+}
+
+pub struct PredictionFromES {
+    pub _type: String,
+    pub status: String,
+    pub outcomes: Vec<Outcome>,
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Outcome {
     pub title: String, // only serialize this field when sending to API / saving to file
 
-    // deserialize this from API (filled in) or from file (default values)
+    // Deserialize from API (filled in) or from a File / Eventsub (default values)
     #[serde(skip_serializing, default)]
     pub id: String,
 
@@ -89,7 +104,7 @@ pub struct Predictor {
     pub user_name: String,
     pub user_login: String,
     pub channel_points_used: u32,
-    pub channel_points_won: u32
+    pub channel_points_won: u32 // TODO: Can be null according to Twitch docs -> test this then make Option if fail
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -121,6 +136,7 @@ where
 
     Ok(p)
 }
+
 
 pub async fn get_predictions() -> Result<Vec<Prediction>> {
     let predictions_str = match std::fs::read_to_string("predictions.json") {

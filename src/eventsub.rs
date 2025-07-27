@@ -4,7 +4,7 @@ use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, spawn, sync::mpsc
 use tungstenite::{client::IntoClientRequest, http::{Method, Request, Response, StatusCode}, Message};
 use tokio_tungstenite::{accept_async, connect_async_tls_with_config, connect_async_with_config, MaybeTlsStream, WebSocketStream};
 use tokio;
-use crate::websocket::WSResponse;
+use crate::{prediction::Outcome, websocket::WSResponse};
 
 const EVENTSUB_URL: &'static str = "wss://eventsub.wss.twitch.tv/ws";
 
@@ -14,6 +14,10 @@ pub enum EventsubClientError {
     AlreadyClosed,
     ConnectionClosed,
     PayloadSessionNotFound,
+    SubscriptionNotFound,
+    EventTypeNotSupported,
+    ParameterNotFound(String),
+    OutcomesParsingFail,
 
     Unknown,
 }
@@ -28,12 +32,31 @@ pub enum WSMessageType {
 }
 
 pub enum WSAction {
-    SessionWelcome(String),
+    SessionWelcome {
+        session_id: String,
+    },
     SessionKeepAlive,
-    Notification,
+    Notification {
+        event_type: EventType,
+    },
     SessionReconnect,
     Revocation,
 }
+
+pub enum EventType {
+    ChannelPredictionBegin {
+        locks_at: String,
+    },
+    ChannelPredictionLock {
+        outcomes: Vec<Outcome>,
+    },
+    ChannelPredictionEnd {
+        winning_id: String,
+        status: String,
+        outcomes: Vec<Outcome>,
+    },
+}
+
 
 impl From<&str> for WSMessageType {
     fn from(value: &str) -> Self {
@@ -111,10 +134,10 @@ impl EventsubClient {
     }
 
     async fn handle_ws_response(&mut self, ws_response: WSResponse) {
-        let _ = match ws_response.metadata.message_type.as_str().into() {
+        let res = match ws_response.metadata.message_type.as_str().into() {
             WSMessageType::SessionWelcome => self.on_session_welcome(ws_response).await,
             WSMessageType::SessionKeepAlive => self.on_session_keepalive(),
-            WSMessageType::Notification => self.on_notification(),
+            WSMessageType::Notification => self.on_notification(ws_response).await,
             WSMessageType::SessionReconnect => self.on_session_reconnect(),
             WSMessageType::Revocation => self.on_revocation(),
             WSMessageType::Other => {
@@ -122,6 +145,10 @@ impl EventsubClient {
                 Ok(())
             },
         };
+
+        if let Err(e) = res {
+            // log error if error
+        }
     }
 
     fn handle_ws_error(&self, error: EventsubClientError) {
@@ -135,7 +162,7 @@ impl EventsubClient {
         println!("Session welcome received");
 
         let session_id = ws_response.payload.session.ok_or(EventsubClientError::PayloadSessionNotFound)?.id;
-        self.sender.send(Ok(WSAction::SessionWelcome(session_id))).await.ok();
+        self.sender.send(Ok(WSAction::SessionWelcome { session_id })).await.ok();
 
         Ok(())
     }
@@ -148,10 +175,56 @@ impl EventsubClient {
         Ok(())
     }
 
-    fn on_notification(&mut self, ) -> Result<(), EventsubClientError> {
+    async fn on_notification(&mut self, ws_response: WSResponse) -> Result<(), EventsubClientError> {
         println!("Notification received");
 
-        // do something based on type of event
+        // Create different EventType enum struct based on event type returned
+        let event = ws_response.payload.event.ok_or(EventsubClientError::ParameterNotFound("Parameter 'even' not found.".to_string()))?;
+        let event_type = match ws_response.payload.subscription.ok_or(EventsubClientError::SubscriptionNotFound)?._type.as_str() {
+            "channel.prediction.begin" => {
+                let locks_at = event
+                    .get("locks_at")
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'locks_at' was not found in event response.".to_string()))?
+                    .as_str()
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'locks_at' is not of type string in event response.".to_string()))?
+                    .to_string();
+
+                EventType::ChannelPredictionBegin { locks_at }
+            },
+            "channel.prediction.lock" => {
+                let outcomes_value = event
+                    .get("outcomes")
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
+                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|_| EventsubClientError::OutcomesParsingFail)?;
+
+                EventType::ChannelPredictionLock { outcomes }
+            },
+            "channel.prediction.end" => {
+                let outcomes_value = event
+                    .get("outcomes")
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
+                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|_| EventsubClientError::OutcomesParsingFail)?;
+                let winning_id = event
+                    .get("winning_outcome_id")
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'winning_outcome_id' not found.".to_string()))?
+                    .as_str()
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'winning_outcome_id' is not of type string in event response.".to_string()))?
+                    .to_string();
+        
+                let status = event
+                    .get("status")
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'status' not found.".to_string()))?
+                    .as_str()
+                    .ok_or(EventsubClientError::ParameterNotFound("Parameter 'status' is not of type string in event response.".to_string()))?
+                    .to_string();
+
+
+                EventType::ChannelPredictionEnd { winning_id, status, outcomes }
+            },
+            _ => return Err(EventsubClientError::EventTypeNotSupported),
+        };
+
+        self.sender.send(Ok(WSAction::Notification { event_type: event_type })).await.ok();
 
         Ok(())
     }
