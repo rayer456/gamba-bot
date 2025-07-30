@@ -1,10 +1,12 @@
 use anyhow::{bail, Result};
 use futures_util::{future, pin_mut, stream::{SplitSink, SplitStream}, StreamExt, TryStreamExt};
+use serde::Serialize;
+use serde_json::Value;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, spawn, sync::mpsc::{Receiver, Sender}};
 use tungstenite::{client::IntoClientRequest, http::{Method, Request, Response, StatusCode}, Message};
 use tokio_tungstenite::{accept_async, connect_async_tls_with_config, connect_async_with_config, MaybeTlsStream, WebSocketStream};
 use tokio;
-use crate::{prediction::Outcome, websocket::WSResponse};
+use crate::{prediction::Outcome, websocket::{Transport, WSResponse}};
 
 const EVENTSUB_URL: &'static str = "wss://eventsub.wss.twitch.tv/ws";
 
@@ -22,6 +24,16 @@ pub enum EventsubClientError {
     Unknown,
 }
 
+impl From<tungstenite::Error> for EventsubClientError {
+    fn from(err: tungstenite::Error) -> Self {
+        match err {
+            tungstenite::Error::AlreadyClosed => EventsubClientError::AlreadyClosed,
+            tungstenite::Error::ConnectionClosed => EventsubClientError::ConnectionClosed,
+            _ => EventsubClientError::Unknown,
+        }
+    }
+}
+
 pub enum WSMessageType {
     SessionWelcome,
     SessionKeepAlive,
@@ -29,6 +41,19 @@ pub enum WSMessageType {
     SessionReconnect,
     Revocation,
     Other,
+}
+
+impl From<&str> for WSMessageType {
+    fn from(value: &str) -> Self {
+        match value {
+            "session_welcome" => WSMessageType::SessionWelcome,
+            "session_keepalive" => WSMessageType::SessionKeepAlive,
+            "notification" => WSMessageType::Notification,
+            "session_reconnect" => WSMessageType::SessionReconnect,
+            "revocation" => WSMessageType::Revocation,
+            _ => return WSMessageType::Other,
+        }
+    }
 }
 
 pub enum WSAction {
@@ -57,29 +82,46 @@ pub enum EventType {
     },
 }
 
+//
+pub enum SubEvent {
+    ChannelPredictionBegin,
+    ChannelPredictionLock,
+    ChannelPredictionEnd,
+}
 
-impl From<&str> for WSMessageType {
-    fn from(value: &str) -> Self {
+impl TryFrom<&str> for SubEvent {
+    type Error = EventsubClientError;
+
+    fn try_from(value: &str) -> Result<Self, EventsubClientError> {
         match value {
-            "session_welcome" => WSMessageType::SessionWelcome,
-            "session_keepalive" => WSMessageType::SessionKeepAlive,
-            "notification" => WSMessageType::Notification,
-            "session_reconnect" => WSMessageType::SessionReconnect,
-            "revocation" => WSMessageType::Revocation,
-            _ => return WSMessageType::Other,
+            "channel.prediction.begin" => Ok(Self::ChannelPredictionBegin),
+            "channel.prediction.lock" => Ok(Self::ChannelPredictionLock),
+            "channel.prediction.end" => Ok(Self::ChannelPredictionEnd),
+            _ => Err(EventsubClientError::EventTypeNotSupported),
         }
     }
 }
 
-impl From<tungstenite::Error> for EventsubClientError {
-    fn from(err: tungstenite::Error) -> Self {
-        match err {
-            tungstenite::Error::AlreadyClosed => EventsubClientError::AlreadyClosed,
-            tungstenite::Error::ConnectionClosed => EventsubClientError::ConnectionClosed,
-            _ => EventsubClientError::Unknown,
+impl SubEvent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ChannelPredictionBegin => "channel.prediction.begin",
+            Self::ChannelPredictionLock => "channel.prediction.lock",
+            Self::ChannelPredictionEnd => "channel.prediction.end",
         }
     }
 }
+
+// https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription
+#[derive(Serialize)]
+pub struct SubToEventData {
+    #[serde(rename(serialize = "type"))]
+    pub _type: String,
+    pub version: String,
+    pub condition: Value, 
+    pub transport: Transport,
+}
+
 
 
 pub struct EventsubClient {

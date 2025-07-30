@@ -47,6 +47,9 @@ pub enum TwitchApiSignal {
         command: Command,
         reason: String,
     },
+    UnauthorizedNoCommand {
+        reason: String,
+    },
     BadRequest (String),
     TooManyRequests,
     Unknown {

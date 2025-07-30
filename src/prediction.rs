@@ -26,6 +26,7 @@ impl From<&str> for PredictionCommandVariant {
     }
 }
 
+
 #[derive(Serialize, Clone, Debug)]
 pub struct PredictionResponse {
     

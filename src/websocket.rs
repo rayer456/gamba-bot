@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Deserialize, Debug)]
@@ -47,12 +47,12 @@ pub struct Subscription {
     pub _type: String,
     pub version: String,
     pub cost: i32,
-    pub condition: Value, // TODO: work out further
+    pub condition: Value,
     pub transport: Transport,
     pub created_at: String,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Transport {
     pub method: String,
     pub session_id: String,

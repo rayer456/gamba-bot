@@ -1,4 +1,5 @@
 use core::panic;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use std::ops::Deref;
@@ -12,13 +13,13 @@ use std::time::Duration;
 
 use crate::command::{self, Command};
 use crate::config::Config;
-use crate::eventsub::{self, EventType, EventsubClientError, WSAction};
+use crate::eventsub::{self, EventType, EventsubClientError, SubEvent, SubToEventData, WSAction};
 use crate::message::User;
 use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd, PredictionStatus};
 use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
-use crate::websocket::WSResponse;
+use crate::websocket::{Transport, WSResponse};
 use crate::{message::Message, stream::Stream};
 use crate::token::TokenType;
 
@@ -26,7 +27,7 @@ use anyhow::{bail, Result};
 
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
-use serde_json::Value;
+use serde_json::{json, Value};
 use futures::join;
 use tokio::{signal, spawn};
 use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
@@ -184,7 +185,12 @@ impl Bot {
             // Probably create new function in bot to handle actions? Or at least define said actions
             if let Ok(action) = action_or_error {
                 match action {
-                    WSAction::SessionWelcome { session_id } => self.sub_twitch_events(session_id), // TODO: handle session event (sub to event via API)
+                    WSAction::SessionWelcome { session_id } => {
+                        let condition: Value = json!({ "broadcaster_user_id": self.cfg.twitch_cfg.broadcaster_id }); // same for all events in this case
+                        self.sub_twitch_events(&session_id, SubEvent::ChannelPredictionBegin, &condition);
+                        self.sub_twitch_events(&session_id, SubEvent::ChannelPredictionLock, &condition);
+                        self.sub_twitch_events(&session_id, SubEvent::ChannelPredictionEnd, &condition);
+                    }
                     WSAction::SessionKeepAlive => println!("keep alive message"),
 
                     // Check electrobot
@@ -197,8 +203,34 @@ impl Bot {
         }
     }
 
-    fn sub_twitch_events(&self, session_id: String) {
-        
+    fn sub_twitch_events(&self, session_id: &str, sub_event: SubEvent, condition_object: &Value) {
+        let http_client_c = self.http_client.clone();
+        let tx_to_bot_c = self.tx_to_bot.clone();
+        let common_paras = self.get_common_twitch_parameters();
+        let data = SubToEventData {
+            _type: sub_event.as_str().to_string(),
+            version: "1".to_string(),
+            condition: condition_object.clone(),
+            transport: Transport {
+                method: "websocket".to_string(),
+                session_id: session_id.to_string(),
+            }
+        };
+
+        spawn(async move {
+            let res = twitch::sub_to_event(
+                http_client_c,
+                common_paras,
+                tx_to_bot_c,
+                data
+            ).await;
+
+            match res {
+                Ok(_) => println!("Finished sub_to_event call"),
+                Err(e) => (),
+            }
+
+        });
     }
 
     fn handle_twitch_events(&self, event_type: EventType) {
