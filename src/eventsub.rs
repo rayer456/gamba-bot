@@ -179,7 +179,7 @@ impl EventsubClient {
         println!("Notification received");
 
         // Create different EventType enum struct based on event type returned
-        let event = ws_response.payload.event.ok_or(EventsubClientError::ParameterNotFound("Parameter 'even' not found.".to_string()))?;
+        let event = ws_response.payload.event.ok_or(EventsubClientError::ParameterNotFound("Parameter 'event' not found.".to_string()))?;
         let event_type = match ws_response.payload.subscription.ok_or(EventsubClientError::SubscriptionNotFound)?._type.as_str() {
             "channel.prediction.begin" => {
                 let locks_at = event

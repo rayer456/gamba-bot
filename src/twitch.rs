@@ -2,12 +2,14 @@ use std::{collections::HashMap, fs, ops::Deref, time::Duration};
 
 use anyhow::{bail, Ok, Result};
 use reqwest::{header::{AUTHORIZATION, CONTENT_TYPE}, Client};
+use serde::Serialize;
 use serde_json::Value;
 use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
 
 use crate::{command::Command, prediction::{self, EndPredictionData, Prediction, PredictionFromTwitch, PredictionStatus}, signal::{BotSignal, TwitchApiSignal}};
 
 const PREDICTIONS_URL: &'static str = "https://api.twitch.tv/helix/predictions";
+const EVENTSUB_SUBSCRIPTION_URL: &'static str = "https://api.twitch.tv/helix/eventsub/subscriptions";
 
 #[derive(Clone, Debug)]
 pub struct TwitchCommonParameters {
@@ -127,7 +129,6 @@ pub async fn end_prediction(
 }
 
 
-
 pub async fn create_prediction(
     api_client: Client, 
     common_paras: TwitchCommonParameters,
@@ -177,3 +178,72 @@ pub async fn create_prediction(
     Ok(())
 }
 
+// curl -X POST 'https://api.twitch.tv/helix/eventsub/subscriptions' \
+// -H 'Authorization: Bearer 2gbdx6oar67tqtcmt49t3wpcgycthx' \
+// -H 'Client-Id: wbmytr93xzw8zbg0p1izqyzzc5mbiz' \
+// -H 'Content-Type: application/json' \
+// -d '{"
+//     type": "user.update",
+//     "version": "1",
+//     "condition": {
+//         "user_id": "1234"
+//     },
+//     "transport": {
+//         "method": "websocket",
+//         "session_id": "AQoQexAWVYKSTIu4ec_2VAxyuhAB"
+//     }
+// }'
+
+#[derive(Serialize)]
+pub struct SubToEventData {
+    #[serde(rename(deserialize = "type"))]
+    _type: String,
+    version: String,
+    condition: Value, // https://dev.twitch.tv/docs/api/reference/#create-eventsub-subscription
+}
+
+pub async fn sub_to_event(
+    api_client: Client,
+    common_paras: TwitchCommonParameters,
+    tx_to_bot: TokioSender<TwitchApiSignal>,
+    event: String) -> Result<()> {
+
+    let response = api_client
+        .post(EVENTSUB_SUBSCRIPTION_URL)
+        .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
+        .header("client-id", common_paras.client_id)
+        .json(&prediction.data_for_twitch)
+        .send().await?;
+
+    let status = response.status().as_u16();
+    let text = response.text().await?;
+    
+    match status {
+        400 => {
+            // Should only fail if automod block or prediction already active
+            // TODO: use automod to warn user when they create predictions with automod held terms
+            // https://dev.twitch.tv/docs/api/reference/#check-automod-status
+
+            println!("400: Failed to create prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
+        }
+        401 => {
+            println!("401: Failed to create prediction: {text}");
+            let _ = tx_to_bot.send(TwitchApiSignal::Unauthorized {
+                command,
+                reason: text,
+            }).await;
+        }
+        200 => {
+            println!("Created prediction successfully");
+            let _ = tx_to_bot.send(TwitchApiSignal::PredictionCreated).await;
+        }
+        429 => drop(tx_to_bot.send(TwitchApiSignal::TooManyRequests).await),
+        _ => drop(tx_to_bot.send(TwitchApiSignal::Unknown {
+            status,
+            text,
+        }).await),
+    };
+
+    Ok(())
+}

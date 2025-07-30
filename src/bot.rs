@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::command::{self, Command};
 use crate::config::Config;
-use crate::eventsub::{self, EventsubClientError, WSAction};
+use crate::eventsub::{self, EventType, EventsubClientError, WSAction};
 use crate::message::User;
 use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd, PredictionStatus};
 use crate::signal::{BotSignal, TwitchApiSignal};
@@ -154,8 +154,6 @@ impl Bot {
                 }
             }
 
-            // TODO: Try receiving eventsub messages
-
             // read the channels
             self.read_twitch_channel().await;
             self.read_evs_channel().await;
@@ -181,21 +179,43 @@ impl Bot {
     }
 
     async fn read_evs_channel(&mut self) {
-        if let Ok(action_or_error) = self.evs_receiver.try_recv() {
+        if let Ok(action_or_error) = self.evs_receiver.try_recv() { // TODO: Use let else here to avoid shit getting too nested
             // Do things based on action and log errors for now
             // Probably create new function in bot to handle actions? Or at least define said actions
             if let Ok(action) = action_or_error {
                 match action {
-                    WSAction::SessionWelcome { session_id } => println!("Session ID: {session_id}"), // TODO: handle session event
+                    WSAction::SessionWelcome { session_id } => self.sub_twitch_events(session_id), // TODO: handle session event (sub to event via API)
                     WSAction::SessionKeepAlive => println!("keep alive message"),
 
                     // Check electrobot
-                    WSAction::Notification { event_type } => (), // TODO: handle 3 different events
+                    WSAction::Notification { event_type } => self.handle_twitch_events(event_type),
                     WSAction::SessionReconnect => (),
                     WSAction::Revocation => (),
                 };
 
             };
+        }
+    }
+
+    fn sub_twitch_events(&self, session_id: String) {
+        
+    }
+
+    fn handle_twitch_events(&self, event_type: EventType) {
+        // TODO: work this out further
+        match event_type {
+            EventType::ChannelPredictionBegin { locks_at } => {
+                println!("Event locks at {locks_at}")
+            }
+            EventType::ChannelPredictionLock { outcomes } => {
+                println!("Prediction is locked");
+                for outcome in outcomes {
+                    println!("The color of the outcome is: {}", outcome.color);
+                }
+            }
+            EventType::ChannelPredictionEnd { winning_id, status, outcomes } => {
+                println!("Status is {status} with winning ID: {winning_id}"); // possible values: resolved, canceled
+            }
         }
     }
 
