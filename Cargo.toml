@@ -25,6 +25,8 @@ slint = { version = "1.10.0" }
 futures-util = "0.3.31"
 tokio-tungstenite = { "version" = "0.27.0", features = ["native-tls"] }
 tungstenite = "0.27.0"
+chrono = "0.4.41"
+date_component = "0.4.3"
 
 
 [build-dependencies]

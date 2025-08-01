@@ -25,6 +25,7 @@ use crate::token::TokenType;
 
 use anyhow::{bail, Result};
 
+use chrono::{DateTime, FixedOffset, Utc};
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -41,6 +42,7 @@ pub struct Bot {
     pub stream_token: Token,
     pub active_commands: Vec<Command>,
     pub loaded_predictions: Vec<Prediction>,
+    prediction_reminder_time: Option<DateTime<FixedOffset>>,
 
     http_client: Client,
     tx_to_bot: TokioSender<TwitchApiSignal>,
@@ -92,6 +94,7 @@ impl Bot {
             stream_token: stream_token?,
             active_commands: active_commands?,
             loaded_predictions: predictions?,
+            prediction_reminder_time: None,
 
             http_client: Client::new(),
             tx_to_bot,
@@ -159,9 +162,23 @@ impl Bot {
             self.read_twitch_channel().await;
             self.read_evs_channel().await;
 
+            self.check_prediction_reminder_time();
+            // TODO: check self.prediction_reminder_time against current UTC time, once time is past current UTC time send chat message, don't forget to set to None to avoid infinite loop of messages
+
             // hourly token validation
             self.stream_token.validate_if_invalid().await;
             self.bot_token.validate_if_invalid().await;
+        }
+    }
+
+    fn check_prediction_reminder_time(&mut self) {
+        let Some(reminder_time) = self.prediction_reminder_time else {
+            return;
+        };
+
+        if Utc::now() >= reminder_time.to_utc() {
+            self.chat("30 seconds to go mf!!");
+            // TODO: set prediction_reminder_time to None!!!!!!!!!!!!!!!!!!!!!
         }
     }
 
@@ -233,12 +250,10 @@ impl Bot {
         });
     }
 
-    fn handle_twitch_events(&self, event_type: EventType) {
-        // TODO: work this out further
+    fn handle_twitch_events(&mut self, event_type: EventType) {
+        // TODO: Why not do this in the eventsub thread and send the result to chat immediately?
         match event_type {
-            EventType::ChannelPredictionBegin { locks_at } => {
-                println!("Event locks at {locks_at}")
-            }
+            EventType::ChannelPredictionBegin { locks_at } => self.handle_event_prediction_begin(locks_at),
             EventType::ChannelPredictionLock { outcomes } => {
                 println!("Prediction is locked");
                 for outcome in outcomes {
@@ -249,6 +264,18 @@ impl Bot {
                 println!("Status is {status} with winning ID: {winning_id}"); // possible values: resolved, canceled
             }
         }
+    }
+
+    fn handle_event_prediction_begin(&mut self, locks_at: String) {
+        self.chat("Prediction has started!");
+
+        match eventsub::get_prediction_reminder_time(locks_at) {
+            Ok(datetime) => self.prediction_reminder_time = Some(datetime),
+            Err(e) => {
+                println!("Failed to get datetime, reason: {e}");
+                return;
+            }
+        };
     }
 
     async fn respond_to_invalid_token(&mut self, command: Command, reason: String) {

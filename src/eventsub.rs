@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use chrono::{DateTime, Duration, FixedOffset, SubsecRound, Timelike};
 use futures_util::{future, pin_mut, stream::{SplitSink, SplitStream}, StreamExt, TryStreamExt};
 use serde::Serialize;
 use serde_json::Value;
@@ -307,6 +308,20 @@ pub fn run_eventsub_client(sender: Sender<Result<WSAction, EventsubClientError>>
 
         println!("reading stream done");
     });
+}
+
+
+                // match chrono::DateTime::parse_from_str(format!("{date} +0000").as_str(), "%Y-%m-%dT%H:%M:%SZ %z") {
+                //         Ok(datetime) => {
+                //             let date_comp = date_component::calculate(&datetime.to_utc(), &Utc::now());
+
+// Returns a list of strings to be send in chat
+pub fn get_prediction_reminder_time(locks_at: String) -> Result<DateTime<FixedOffset>, chrono::ParseError>{
+    // locks_at example: 2020-07-15T17:21:03.17106713Z
+    match DateTime::parse_from_str(format!("{locks_at}, +0000").as_str(), "%Y-%m-%dT%H:%M:%S.%fZ") {
+        Ok(date) => return Ok(date - Duration::seconds(31)),
+        Err(e) => return Err(e)
+    };
 }
 
 
