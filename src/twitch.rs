@@ -137,7 +137,6 @@ pub async fn create_prediction(
     mut prediction: Prediction) -> Result<()> {
 
     prediction.data_for_twitch.broadcaster_id = common_paras.broadcaster_id;
-
     let response = api_client
         .post(PREDICTIONS_URL)
         .header(AUTHORIZATION, format!("Bearer {}", common_paras.access_token))
@@ -155,7 +154,7 @@ pub async fn create_prediction(
             // https://dev.twitch.tv/docs/api/reference/#check-automod-status
 
             println!("400: Failed to create prediction: {text}");
-            let _ = tx_to_bot.send(TwitchApiSignal::BadRequest(text)).await;
+            let _ = tx_to_bot.send(TwitchApiSignal::PredictionStillActive).await;
         }
         401 => {
             println!("401: Failed to create prediction: {text}");

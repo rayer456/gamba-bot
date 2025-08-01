@@ -60,4 +60,5 @@ pub enum TwitchApiSignal {
     PredictionCreated,
     PredictionLocked,
     GotLatestPrediction(),
+    PredictionStillActive,
 }

@@ -190,6 +190,10 @@ impl Bot {
                 TwitchApiSignal::Unknown { status, text }=> println!("ERROR: unknown response: {status}: {text}"),
 
                 TwitchApiSignal::PredictionCreated => println!("INFO: created prediction via API"),
+                TwitchApiSignal::PredictionStillActive => {
+                    self.chat("Prediction still active, use arguments [outcome, cancel] to end.");
+                    // log
+                },
                 _ => ()
             }
         }
@@ -326,14 +330,14 @@ impl Bot {
     }
 
     // TODO: probably remove
-    pub fn find_command_by_cmd(&mut self, cmd: String) -> Option<Command> {
-        for active_command in self.active_commands.iter() {
-            if cmd == active_command.cmd || active_command.alternative_cmds.contains(&cmd) {
-                return Some(active_command.clone());
-            }
-        }
-        None
-    }
+    // pub fn find_command_by_cmd(&mut self, cmd: String) -> Option<Command> {
+    //     for active_command in self.active_commands.iter() {
+    //         if cmd == active_command.cmd || active_command.alternative_cmds.contains(&cmd) {
+    //             return Some(active_command.clone());
+    //         }
+    //     }
+    //     None
+    // }
 
     pub fn chat<T: Display>(&mut self, message: T) {
         if let Err(e) = self.irc_stream.send_chat_message(message) {
@@ -408,15 +412,19 @@ impl Bot {
     }
 
     async fn cmd_create_prediction(&mut self, command: Command) {
-        let preds_str = prediction::get_defined_predictions_as_str(&self.loaded_predictions);
-
         let Some(prediction_name) = command.get_nth_argument(1) else {
-            self.chat(format!("Missing argument: <prediction name>. Available predictions: {preds_str}"));
+            self.chat(format!(
+                "Missing argument: <prediction name>. Available predictions: {}", 
+                prediction::get_defined_predictions_as_str(&self.loaded_predictions)),
+            );
             return;
         };
 
         let Some(prediction) = prediction::find_prediction_by_name(&self.loaded_predictions, &prediction_name) else { 
-            self.chat(format!("Prediction {prediction_name} not found. Available predictions: {preds_str}"));
+            self.chat(format!(
+                "Prediction {prediction_name} not found. Available predictions: {}",
+                prediction::get_defined_predictions_as_str(&self.loaded_predictions)),
+            );
             return;
         };
 
@@ -425,7 +433,7 @@ impl Bot {
             self.get_common_twitch_parameters(), 
             self.tx_to_bot.clone(),
             command,
-            prediction.clone()
+            prediction.clone(),
         ));
     }
 
