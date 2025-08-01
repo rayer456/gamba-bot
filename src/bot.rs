@@ -15,7 +15,7 @@ use crate::command::{self, Command};
 use crate::config::Config;
 use crate::eventsub::{self, EventType, EventsubClientError, SubEvent, SubToEventData, WSAction};
 use crate::message::User;
-use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant as PredCmd, PredictionStatus};
+use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant, PredictionStatus};
 use crate::signal::{BotSignal, TwitchApiSignal};
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
@@ -163,7 +163,6 @@ impl Bot {
             self.read_evs_channel().await;
 
             self.check_prediction_reminder_time();
-            // TODO: check self.prediction_reminder_time against current UTC time, once time is past current UTC time send chat message, don't forget to set to None to avoid infinite loop of messages
 
             // hourly token validation
             self.stream_token.validate_if_invalid().await;
@@ -177,8 +176,8 @@ impl Bot {
         };
 
         if Utc::now() >= reminder_time.to_utc() {
-            self.chat("30 seconds to go mf!!");
-            // TODO: set prediction_reminder_time to None!!!!!!!!!!!!!!!!!!!!!
+            self.chat("30 seconds left to make your prediction!");
+            self.prediction_reminder_time = None;
         }
     }
 
@@ -394,16 +393,14 @@ impl Bot {
     }
 
     async fn prediction_router(&mut self, command: Command) {
-        let Some(pred_variant) = command.arguments.first() else { return };
-        let pred_variant: PredCmd = pred_variant.as_str().into();
-        if pred_variant == PredCmd::Invalid {
+        let first_arg = command.arguments.first().map_or("", |arg| arg);
+        let Ok(pred_variant) = TryInto::<PredictionCommandVariant>::try_into(first_arg) else {
             self.chat("Possible arguments: start lock outcome cancel");
             return;
-        }
+        };
 
         match pred_variant {
-            PredCmd::Start => self.cmd_create_prediction(command).await,
-            PredCmd::Invalid => (),
+            PredictionCommandVariant::Start => self.cmd_create_prediction(command).await,
 
             // cancel, outcome, lock
             _ => self.send_end_prediction_signal(command, pred_variant).await,
@@ -432,7 +429,7 @@ impl Bot {
         ));
     }
 
-    async fn send_end_prediction_signal(&mut self, command: Command, subcommand: PredCmd) {
+    async fn send_end_prediction_signal(&mut self, command: Command, subcommand: PredictionCommandVariant) {
         use PredictionStatus as Status;
 
         let latest_pred = match twitch::get_latest_prediction(
@@ -450,7 +447,7 @@ impl Bot {
 
         match latest_pred.status {
             Status::Locked => {
-                if subcommand == PredCmd::Lock {
+                if subcommand == PredictionCommandVariant::Lock {
                     self.chat("Prediction is already locked!");
                     return;
                 }
@@ -463,9 +460,9 @@ impl Bot {
         }
 
         let desired_status = match subcommand {
-            PredCmd::Lock => Status::Locked,
-            PredCmd::Cancel => Status::Canceled,
-            PredCmd::Outcome => {
+            PredictionCommandVariant::Lock => Status::Locked,
+            PredictionCommandVariant::Cancel => Status::Canceled,
+            PredictionCommandVariant::Outcome => {
                 let num_outcomes = latest_pred.outcomes.len();
                 let Some(outcome_str) = command.get_nth_argument(1) else {
                     self.chat(format!("Missing argument: <outcome>. Expected a value of 1-{num_outcomes}"));

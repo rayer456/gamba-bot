@@ -318,12 +318,32 @@ pub fn run_eventsub_client(sender: Sender<Result<WSAction, EventsubClientError>>
 // Returns a list of strings to be send in chat
 pub fn get_prediction_reminder_time(locks_at: String) -> Result<DateTime<FixedOffset>, chrono::ParseError>{
     // locks_at example: 2020-07-15T17:21:03.17106713Z
-    match DateTime::parse_from_str(format!("{locks_at}, +0000").as_str(), "%Y-%m-%dT%H:%M:%S.%fZ") {
+    match DateTime::parse_from_str(format!("{locks_at} +0000").as_str(), "%Y-%m-%dT%H:%M:%S.%fZ %z") {
         Ok(date) => return Ok(date - Duration::seconds(31)),
         Err(e) => return Err(e)
     };
 }
 
 
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
+    use super::*;
 
+    #[test]
+    fn test_get_prediction_reminder_time() {
+        let locks_at = "2020-07-15T17:21:03.17106713Z".to_string();
+        let res = get_prediction_reminder_time(locks_at);
+        let naive_datetime = NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2020, 07, 15).unwrap(),
+            NaiveTime::from_hms_nano_opt(17, 20, 32, 17106713).unwrap(), //31 seconds earlier
+        );
+
+        assert_eq!(
+            res.unwrap().to_utc(), 
+            DateTime::<Utc>::from_naive_utc_and_offset(naive_datetime, Utc)
+        );
+
+    }
+}

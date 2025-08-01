@@ -3,25 +3,22 @@ use serde::{de, Deserialize, Serialize};
 
 
 #[derive(PartialEq)]
-pub enum PredictionCommandVariant { // kinda shit name
+pub enum PredictionCommandVariant {
     Start,
     Lock,
     Outcome,
     Cancel,
-    Invalid,
 }
 
-impl From<&str> for PredictionCommandVariant {
-    fn from(pred_variant: &str) -> Self {
-        match pred_variant.to_uppercase().as_str() {
-            "START" => PredictionCommandVariant::Start,
-            "LOCK" => PredictionCommandVariant::Lock,
-            "OUTCOME" => PredictionCommandVariant::Outcome,
-            "CANCEL" => PredictionCommandVariant::Cancel,
-            _ => {
-                // log this as warning
-                return PredictionCommandVariant::Invalid
-            },
+impl TryFrom<&str> for PredictionCommandVariant {
+    type Error = String;
+    fn try_from(input: &str) -> Result<Self, String> {
+        match input {
+            s if s.eq_ignore_ascii_case("start") => Ok(Self::Start),
+            s if s.eq_ignore_ascii_case("lock") => Ok(Self::Lock),
+            s if s.eq_ignore_ascii_case("outcome") => Ok(Self::Outcome),
+            s if s.eq_ignore_ascii_case("cancel") => Ok(Self::Cancel),
+            _ => Err("Invalid command variant.".to_string()),
         }
     }
 }
