@@ -1,9 +1,8 @@
 use std::{
-    fmt::Display, io::{Read, Write}, net::TcpStream, os::raw, time::Duration
+    fmt::Display, io::{Read, Write}, net::TcpStream, time::Duration
 };
 
 use anyhow::{bail, Result};
-use tokio::io::split;
 
 use crate::message::{self, User};
 use message::Message;

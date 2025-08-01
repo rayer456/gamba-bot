@@ -1,12 +1,11 @@
-use std::{collections::HashMap, fs, ops::Deref, time::Duration, vec};
+use std::collections::HashMap;
 
 use anyhow::{bail, Ok, Result};
 use reqwest::{header::{AUTHORIZATION, CONTENT_TYPE}, Client};
-use serde::Serialize;
 use serde_json::Value;
-use tokio::{spawn, sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender}};
+use tokio::{sync::mpsc::{Sender as TokioSender}};
 
-use crate::{command::Command, eventsub::{EventType, SubEvent, SubToEventData}, prediction::{self, EndPredictionData, Prediction, PredictionFromTwitch, PredictionStatus}, signal::{BotSignal, TwitchApiSignal}, websocket::Transport};
+use crate::{command::Command, eventsub::{SubToEventData}, prediction::{EndPredictionData, Prediction, PredictionFromTwitch}, signal::{TwitchApiSignal}};
 
 const PREDICTIONS_URL: &'static str = "https://api.twitch.tv/helix/predictions";
 const EVENTSUB_SUBSCRIPTION_URL: &'static str = "https://api.twitch.tv/helix/eventsub/subscriptions";

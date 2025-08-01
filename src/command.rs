@@ -1,6 +1,4 @@
-use reqwest::header::AUTHORIZATION;
 use serde::{de, Deserialize};
-use std::fmt::{self, Display};
 
 use anyhow::{bail, Result};
 use std::time::{Duration, SystemTime};

@@ -1,11 +1,11 @@
-use anyhow::{bail, Result};
-use chrono::{DateTime, Duration, FixedOffset, SubsecRound, Timelike};
-use futures_util::{future, pin_mut, stream::{SplitSink, SplitStream}, StreamExt, TryStreamExt};
+use anyhow::Result;
+use chrono::{DateTime, Duration, FixedOffset};
+use futures_util::{stream::{SplitSink, SplitStream}, StreamExt};
 use serde::Serialize;
 use serde_json::Value;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream, spawn, sync::mpsc::{Receiver, Sender}};
-use tungstenite::{client::IntoClientRequest, http::{Method, Request, Response, StatusCode}, Message};
-use tokio_tungstenite::{accept_async, connect_async_tls_with_config, connect_async_with_config, MaybeTlsStream, WebSocketStream};
+use tokio::{net::TcpStream, spawn, sync::mpsc::Sender};
+use tungstenite::{client::IntoClientRequest, Message};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tokio;
 use crate::{prediction::Outcome, websocket::{Transport, WSResponse}};
 

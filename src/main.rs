@@ -14,13 +14,11 @@ mod signal;
 mod websocket;
 mod eventsub;
 
-use std::{backtrace, env, path::PathBuf, time::Duration};
+use std::{env, path::PathBuf};
 
 use anyhow::Result;
 
 use bot::Bot;
-use config::ConfigError;
-use tokio::{spawn, time::sleep};
 
 
 #[tokio::main]

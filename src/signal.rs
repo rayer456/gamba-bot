@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::{command::Command, message::User, prediction::{Prediction, PredictionStatus}, twitch::TwitchCommonParameters};
+use crate::{command::Command, prediction::{Prediction, PredictionStatus}, twitch::TwitchCommonParameters};
 
 pub enum BotSignal {
     CreatePrediction {

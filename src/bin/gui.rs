@@ -1,8 +1,7 @@
-use std::{env, fs, path::{Path, PathBuf}, process::exit, rc::Rc};
+use std::{env, path::PathBuf, rc::Rc};
 use anyhow::Result;
-use futures::stream::PollNext;
 use slint::{ComponentHandle, LogicalSize, SharedString};
-use gamba_bot::{config::{self, Config, ConfigError}, helpers};
+use gamba_bot::{config::{self, Config, ConfigError}};
 
 slint::include_modules!();
 fn main() -> Result<()> {

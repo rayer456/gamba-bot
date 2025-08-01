@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
-use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HOST};
-use serde::{Deserialize, Deserializer, Serialize};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use serde::Deserialize;
 use std::{rc::Rc, time::{Duration, Instant, SystemTime}};
 
 use crate::config::Config;

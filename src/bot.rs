@@ -1,25 +1,19 @@
 use core::panic;
-use std::collections::HashMap;
 use std::fmt::Display;
 
-use std::ops::Deref;
 use std::path::PathBuf;
-use std::process::exit;
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver, Sender};
 
-use std::thread::{self};
 use std::time::Duration;
 
 use crate::command::{self, Command};
 use crate::config::Config;
 use crate::eventsub::{self, EventType, EventsubClientError, SubEvent, SubToEventData, WSAction};
-use crate::message::User;
 use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant, PredictionStatus};
-use crate::signal::{BotSignal, TwitchApiSignal};
+use crate::signal::TwitchApiSignal;
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
-use crate::websocket::{Transport, WSResponse};
+use crate::websocket::Transport;
 use crate::{message::Message, stream::Stream};
 use crate::token::TokenType;
 
@@ -30,7 +24,7 @@ use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use serde_json::{json, Value};
 use futures::join;
-use tokio::{signal, spawn};
+use tokio::spawn;
 use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
 
 const USERS_URL: &'static str = "https://api.twitch.tv/helix/users";

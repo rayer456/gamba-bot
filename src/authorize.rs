@@ -1,11 +1,9 @@
-use core::panic;
 use std::{
-    env, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}
+    io::{BufReader, Read, Write}, net::{TcpListener, TcpStream}
 };
 
 use anyhow::{bail, Result};
-use reqwest::{header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE}, Client};
-use urlencoding::encode;
+use reqwest::{header::{CONTENT_TYPE}, Client};
 
 use config::{TwitchConfig};
 
