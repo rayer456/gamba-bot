@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::command::{self, Command};
 use crate::config::Config;
 use crate::eventsub::{self, EventType, EventsubClientError, SubEvent, SubToEventData, WSAction};
-use crate::prediction::{self, EndPredictionData, Prediction, PredictionCommandVariant, PredictionStatus};
+use crate::prediction::{self, EndPredictionData, Outcome, Prediction, PredictionCommandVariant, PredictionStatus};
 use crate::signal::TwitchApiSignal;
 use crate::token::Token;
 use crate::twitch::{self, TwitchCommonParameters};
@@ -36,7 +36,7 @@ pub struct Bot {
     pub stream_token: Token,
     pub active_commands: Vec<Command>,
     pub loaded_predictions: Vec<Prediction>,
-    prediction_reminder_time: Option<DateTime<FixedOffset>>,
+    prediction_reminder_time: Option<DateTime<Utc>>,
 
     http_client: Client,
     tx_to_bot: TokioSender<TwitchApiSignal>,
@@ -169,7 +169,7 @@ impl Bot {
             return;
         };
 
-        if Utc::now() >= reminder_time.to_utc() {
+        if Utc::now() >= reminder_time {
             self.chat("30 seconds left to make your prediction!");
             self.prediction_reminder_time = None;
         }
@@ -251,12 +251,7 @@ impl Bot {
         // TODO: Why not do this in the eventsub thread and send the result to chat immediately?
         match event_type {
             EventType::ChannelPredictionBegin { locks_at } => self.handle_event_prediction_begin(locks_at),
-            EventType::ChannelPredictionLock { outcomes } => {
-                println!("Prediction is locked");
-                for outcome in outcomes {
-                    println!("The color of the outcome is: {}", outcome.color);
-                }
-            }
+            EventType::ChannelPredictionLock { outcomes } => self.handle_event_prediction_lock(outcomes),
             EventType::ChannelPredictionEnd { winning_id, status, outcomes } => {
                 println!("Status is {status} with winning ID: {winning_id}"); // possible values: resolved, canceled
             }
@@ -267,12 +262,26 @@ impl Bot {
         self.chat("Prediction has started!");
 
         match eventsub::get_prediction_reminder_time(locks_at) {
-            Ok(datetime) => self.prediction_reminder_time = Some(datetime),
+            Ok(datetime) => self.prediction_reminder_time = Some(datetime.to_utc()),
             Err(e) => {
                 println!("Failed to get datetime, reason: {e}");
                 return;
             }
         };
+    }
+
+    fn handle_event_prediction_lock(&mut self, outcomes: Vec<Outcome>) {
+        // bets are closed 40/60 split (2 betters, pool: 224) pausefish
+
+        self.prediction_reminder_time = None; // Don't remind after locking manually
+
+        let (split_str, total_points, total_users) = prediction::get_prediction_lock_vars_from_outcomes(outcomes);
+
+        self.chat(format!("Bets are closed, {split_str} split ({total_users} betters, pool: {total_points}) PauseFish"));
+    }
+    
+    fn handle_event_prediction_end(&mut self, winning_id: String, status: String, outcomes: Vec<Outcome>) {
+        
     }
 
     async fn respond_to_invalid_token(&mut self, command: Command, reason: String) {

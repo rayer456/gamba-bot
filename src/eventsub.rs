@@ -20,7 +20,7 @@ pub enum EventsubClientError {
     SubscriptionNotFound,
     EventTypeNotSupported,
     ParameterNotFound(String),
-    OutcomesParsingFail,
+    OutcomesParsingFail(String),
 
     Unknown,
 }
@@ -190,7 +190,7 @@ impl EventsubClient {
         };
 
         if let Err(e) = res {
-            // log error if error
+            println!("{:?}", e);
         }
     }
 
@@ -238,7 +238,7 @@ impl EventsubClient {
                 let outcomes_value = event
                     .get("outcomes")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
-                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|_| EventsubClientError::OutcomesParsingFail)?;
+                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|e| EventsubClientError::OutcomesParsingFail(e.to_string()))?;
 
                 EventType::ChannelPredictionLock { outcomes }
             },
@@ -246,7 +246,7 @@ impl EventsubClient {
                 let outcomes_value = event
                     .get("outcomes")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
-                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|_| EventsubClientError::OutcomesParsingFail)?;
+                let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|e| EventsubClientError::OutcomesParsingFail(e.to_string()))?;
                 let winning_id = event
                     .get("winning_outcome_id")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'winning_outcome_id' not found.".to_string()))?
@@ -260,7 +260,6 @@ impl EventsubClient {
                     .as_str()
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'status' is not of type string in event response.".to_string()))?
                     .to_string();
-
 
                 EventType::ChannelPredictionEnd { winning_id, status, outcomes }
             },

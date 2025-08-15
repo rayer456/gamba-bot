@@ -1,4 +1,7 @@
+use std::default;
+
 use anyhow::{bail, Result};
+use futures::stream::SplitStream;
 use serde::{de, Deserialize, Serialize};
 
 
@@ -90,10 +93,23 @@ pub struct Outcome {
     pub channel_points: u32,
 
     #[serde(skip_serializing, default)]
-    pub top_predictors: Option<Vec<Predictor>>, // TODO: check Option value when resolving, but no winners
+    pub top_predictors: Option<Vec<Predictor>>, // TODO: Option probably isn't necessary
 
     #[serde(skip_serializing, default)]
     pub color: String,
+}
+
+impl Default for Outcome {
+    fn default() -> Self {
+        Outcome { 
+            title: String::new(),
+            id: String::new(),
+            users: 0,
+            channel_points: 0, 
+            top_predictors: None, 
+            color: String::new(),
+        }
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -102,7 +118,29 @@ pub struct Predictor {
     pub user_name: String,
     pub user_login: String,
     pub channel_points_used: u32,
-    pub channel_points_won: u32 // TODO: Can be null according to Twitch docs -> test this then make Option if fail
+    pub channel_points_won: Option<u32>
+}
+
+impl Predictor {
+    pub fn new_set_points(channel_points_used: u32, channel_points_won: Option<u32>) -> Self {
+        let mut predictor = Self::default();
+        predictor.channel_points_used = channel_points_used;
+        predictor.channel_points_won = channel_points_won;
+
+        predictor
+    }
+}
+
+impl Default for Predictor {
+    fn default() -> Self {
+        Predictor { 
+            user_id: String::new(),
+            user_name: String::new(),
+            user_login: String::new(),
+            channel_points_used: 0,
+            channel_points_won: None,
+        }
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -174,4 +212,91 @@ pub fn get_defined_predictions_as_str(predictions: &Vec<Prediction>) -> String {
         .map(|p| p.name.as_str())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+pub fn get_prediction_lock_vars_from_outcomes(outcomes: Vec<Outcome>) -> (String, u32, u32) {
+    let mut total_points = 0;
+    let mut total_users = 0;
+    for outcome in &outcomes {
+        total_points += outcome.channel_points;
+        total_users += outcome.users;
+    }
+
+    // Avoid floating point math if no points bet
+    if total_points == 0 {
+        let split_str = vec!["0"; outcomes.len()].join("/");
+        return (split_str, total_points, total_users);
+    }
+
+    let split_str = outcomes
+        .iter()
+        .map(|outcome| ((outcome.channel_points as f32 / total_points as f32) * 100.0).round().to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+
+    return (split_str, total_points, total_users)
+}
+
+pub fn get_prediction_end_vars(winning_id: String, status: String, outcomes: Vec<Outcome>) -> ()
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_prediction_lock_vars_from_outcomes() {
+        let mut outcomes = vec![];
+        
+        let mut outcome = Outcome::default();
+        outcome.users = 3;
+        outcome.channel_points = 5211;
+
+        let mut outcome_2 = Outcome::default();
+        outcome_2.users = 5;
+        outcome_2.channel_points = 3812;
+
+        let mut outcome_3 = Outcome::default();
+        outcome_3.users = 1;
+        outcome_3.channel_points = 7080;
+
+        outcomes.push(outcome.clone());
+        outcomes.push(outcome_2.clone());
+        outcomes.push(outcome_3.clone());
+
+        // Test with 3 outcomes with points
+        let (split_str, total_points, total_users) = get_prediction_lock_vars_from_outcomes(outcomes.clone());
+        assert_eq!(split_str, "32/24/44");
+        assert_eq!(total_points, 16103);
+        assert_eq!(total_users, 9);
+
+        // Test with 2 outcomes with points and 1 without points
+        outcome_3.channel_points = 0;
+        outcomes.remove(2);
+        outcomes.push(outcome_3.clone());
+        let (split_str, total_points, total_users) = get_prediction_lock_vars_from_outcomes(outcomes.clone());
+        assert_eq!(split_str, "58/42/0");
+        assert_eq!(total_points, 9023);
+        assert_eq!(total_users, 9);
+
+        // Test with no points bet, always possible, even if users did bet
+        outcomes[0].channel_points = 0;
+        outcomes[1].channel_points = 0;
+        outcomes[2].channel_points = 0;
+        let (split_str, total_points, total_users) = get_prediction_lock_vars_from_outcomes(outcomes.clone());
+        assert_eq!(split_str, "0/0/0");
+        assert_eq!(total_points, 0);
+        assert_eq!(total_users, 9);
+    }
+
+    #[test]
+    fn test_get_prediction_end_vars_from_outcomes() {
+
+        let mut predictors_won: Vec<Predictor> = vec![];
+        predictors_won.push(Predictor::new_set_points(432, None));
+
+        let mut predictors_lost: Vec<Predictor> = vec![];
+
+        todo!()
+    }
 }
