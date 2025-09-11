@@ -222,10 +222,10 @@ impl EventsubClient {
         println!("Notification received");
 
         // Create different EventType enum struct based on event type returned
-        let event = ws_response.payload.event.ok_or(EventsubClientError::ParameterNotFound("Parameter 'event' not found.".to_string()))?;
+        let event_data = ws_response.payload.event.ok_or(EventsubClientError::ParameterNotFound("Parameter 'event' not found.".to_string()))?;
         let event_type = match ws_response.payload.subscription.ok_or(EventsubClientError::SubscriptionNotFound)?._type.as_str() {
             "channel.prediction.begin" => {
-                let locks_at = event
+                let locks_at = event_data
                     .get("locks_at")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'locks_at' was not found in event response.".to_string()))?
                     .as_str()
@@ -235,7 +235,7 @@ impl EventsubClient {
                 EventType::ChannelPredictionBegin { locks_at }
             },
             "channel.prediction.lock" => {
-                let outcomes_value = event
+                let outcomes_value = event_data
                     .get("outcomes")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
                 let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|e| EventsubClientError::OutcomesParsingFail(e.to_string()))?;
@@ -243,18 +243,18 @@ impl EventsubClient {
                 EventType::ChannelPredictionLock { outcomes }
             },
             "channel.prediction.end" => {
-                let outcomes_value = event
+                let outcomes_value = event_data
                     .get("outcomes")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'outcomes' not found.".to_string()))?;
                 let outcomes = serde_json::from_value::<Vec<Outcome>>(outcomes_value.to_owned()).map_err(|e| EventsubClientError::OutcomesParsingFail(e.to_string()))?;
-                let winning_id = event
+                let winning_id = event_data
                     .get("winning_outcome_id")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'winning_outcome_id' not found.".to_string()))?
                     .as_str()
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'winning_outcome_id' is not of type string in event response.".to_string()))?
                     .to_string();
         
-                let status = event
+                let status = event_data
                     .get("status")
                     .ok_or(EventsubClientError::ParameterNotFound("Parameter 'status' not found.".to_string()))?
                     .as_str()

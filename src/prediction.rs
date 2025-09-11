@@ -237,7 +237,9 @@ pub fn get_prediction_lock_vars_from_outcomes(outcomes: Vec<Outcome>) -> (String
     return (split_str, total_points, total_users)
 }
 
-pub fn get_prediction_end_vars(winning_id: String, status: String, outcomes: Vec<Outcome>) -> ()
+pub fn get_prediction_end_vars(winning_id: String, status: String, outcomes: Vec<Outcome>) -> () {
+    
+}
 
 
 #[cfg(test)]
