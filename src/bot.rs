@@ -154,7 +154,7 @@ impl Bot {
 
             // read the channels
             self.read_twitch_channel().await;
-            self.read_evs_channel().await;
+            self.read_eventsub_channel().await;
 
             self.check_prediction_reminder_time();
 
@@ -193,7 +193,7 @@ impl Bot {
         }
     }
 
-    async fn read_evs_channel(&mut self) {
+    async fn read_eventsub_channel(&mut self) {
         if let Ok(action_or_error) = self.evs_receiver.try_recv() { // TODO: Use let else here to avoid shit getting too nested
             // Do things based on action and log errors for now
             // Probably create new function in bot to handle actions? Or at least define said actions
@@ -254,6 +254,7 @@ impl Bot {
             EventType::ChannelPredictionLock { outcomes } => self.handle_event_prediction_lock(outcomes),
             EventType::ChannelPredictionEnd { winning_id, status, outcomes } => {
                 println!("Status is {status} with winning ID: {winning_id}"); // possible values: resolved, canceled
+                self.handle_event_prediction_end(winning_id, status, outcomes);
             }
         }
     }
@@ -281,7 +282,19 @@ impl Bot {
     }
     
     fn handle_event_prediction_end(&mut self, winning_id: String, status: String, outcomes: Vec<Outcome>) {
-        
+        self.prediction_reminder_time = None;
+        match status.to_uppercase().as_str() {
+            "RESOLVED" => {
+                let (winner_string, loser_string) = prediction::get_prediction_end_vars(winning_id, outcomes).unwrap_or_else(|_| (String::from("test"), String::from("test")));
+                self.chat(format!("{winner_string}"));
+                self.chat(format!("{loser_string}"));
+
+            },
+            "CANCELED" => {
+                self.chat("Prediction canceled");
+            },
+            _ => return,
+        };
     }
 
     async fn respond_to_invalid_token(&mut self, command: Command, reason: String) {

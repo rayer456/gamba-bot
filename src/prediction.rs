@@ -1,4 +1,4 @@
-use std::default;
+use std::{cmp::Ordering, default};
 
 use anyhow::{bail, Result};
 use futures::stream::SplitStream;
@@ -237,13 +237,65 @@ pub fn get_prediction_lock_vars_from_outcomes(outcomes: Vec<Outcome>) -> (String
     return (split_str, total_points, total_users)
 }
 
-pub fn get_prediction_end_vars(winning_id: String, status: String, outcomes: Vec<Outcome>) -> () {
-    
+pub fn get_prediction_end_vars(winning_id: String, outcomes: Vec<Outcome>) -> Result<(String, String)> {
+    let mut winning_outcome: Option<Outcome> = None;
+    let mut all_losers_vec: Vec<Vec<Predictor>> = vec![];
+    for outcome in outcomes {
+        if outcome.id == winning_id {
+            winning_outcome = Some(outcome);
+            continue;
+        }
+
+        let Some(top_predictors) = outcome.top_predictors else { bail!("ERROR: top predictors not found") };
+        all_losers_vec.push(top_predictors);
+    }
+
+    let Some(winning_outcome) = winning_outcome else { bail!("ERROR: outcome with winning_id was not found") };
+    let Some(mut top_predictors) = winning_outcome.top_predictors else { bail!("ERROR: top predictors not found") };
+
+    // Sort winners just in case it doesn't do it automatically
+    // TODO: rewrite this ordering
+    top_predictors.sort_by(|a, b| {
+        match a.channel_points_won.unwrap_or_else(|| 0).cmp(&b.channel_points_won.unwrap_or_else(|| 0)).reverse() {
+            Ordering::Equal => a.user_name.cmp(&b.user_name),
+            other => other,
+        }
+    });
+    let top_predictors_vec = top_predictors.iter()
+        .take(10) // shouldn't be more than 10 anyway
+        .map(|w| format!("{} (+{})", w.user_name, w.channel_points_won.unwrap_or_else(|| 0)))
+        .collect::<Vec<String>>();
+    let top_predictors_str = top_predictors_vec.join(", ");
+
+    let mut all_losers_flattened_vec = all_losers_vec.into_iter()
+        .flatten()
+        // .map(|l| format!("{}, {}", l.user_name, l.channel_points_used))
+        .collect::<Vec<Predictor>>();
+
+    // TODO: rewrite this ordering
+    all_losers_flattened_vec.sort_by(|a, b| {
+        match a.channel_points_used.cmp(&b.channel_points_used).reverse() {
+            Ordering::Equal => a.user_name.cmp(&b.user_name),
+            other => other,
+        }
+    });
+    let top10_losers_vec = all_losers_flattened_vec.iter()
+        .take(10)
+        .map(|l| format!("{} (-{})", l.user_name, l.channel_points_used))
+        .collect::<Vec<String>>();
+
+    let top_losers_str = top10_losers_vec.join(", ");
+
+
+    Ok((top_predictors_str, top_losers_str))
+
 }
 
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
 
     #[test]
@@ -292,13 +344,148 @@ mod tests {
     }
 
     #[test]
-    fn test_get_prediction_end_vars_from_outcomes() {
+    fn test_get_prediction_end_vars() {
+        // WINNING PREDICTORS
+        let mut predictor_win2 = Predictor::default();
+        predictor_win2.user_name = "xavier".to_string();
+        predictor_win2.channel_points_used = 1000;
+        predictor_win2.channel_points_won = Some(1950);
 
-        let mut predictors_won: Vec<Predictor> = vec![];
-        predictors_won.push(Predictor::new_set_points(432, None));
+        let mut predictor_win1 = Predictor::default();
+        predictor_win1.user_name = "rayer".to_string();
+        predictor_win1.channel_points_used = 500;
+        predictor_win1.channel_points_won = Some(1000);
 
-        let mut predictors_lost: Vec<Predictor> = vec![];
+        let mut predictor_win3 = Predictor::default();
+        predictor_win3.user_name = "pisker".to_string();
+        predictor_win3.channel_points_used = 2500;
+        predictor_win3.channel_points_won = Some(3669);
 
-        todo!()
+        let predictors_win = vec![
+            predictor_win1,
+            predictor_win2,
+            predictor_win3,
+        ];
+
+        // WINNING OUTCOME
+        let mut outcome_win = Outcome::default();
+        outcome_win.id = "winning_id123".to_string();
+        outcome_win.top_predictors = Some(predictors_win);
+
+        // LOSING PREDICTORS LOSING OUTCOME 1
+        let mut predictor_lose1 = Predictor::default();
+        predictor_lose1.user_name = "john".to_string();
+        predictor_lose1.channel_points_used = 500;
+
+        let mut predictor_lose2 = Predictor::default();
+        predictor_lose2.user_name = "tim".to_string();
+        predictor_lose2.channel_points_used = 1000;
+
+        let mut predictor_lose3 = Predictor::default();
+        predictor_lose3.user_name = "chiggs".to_string();
+        predictor_lose3.channel_points_used = 2500;
+
+        let mut predictor_lose4 = Predictor::default();
+        predictor_lose4.user_name = "Trevis".to_string();
+        predictor_lose4.channel_points_used = 5000;
+
+        let mut predictor_lose5 = Predictor::default();
+        predictor_lose5.user_name = "Franco".to_string();
+        predictor_lose5.channel_points_used = 80;
+        
+        let predictors_lose1 = vec![
+            predictor_lose1,
+            predictor_lose2,
+            predictor_lose3,
+            predictor_lose4,
+            predictor_lose5,
+        ];
+
+        // LOSING OUTCOME 1
+        let mut outcome_lose1 = Outcome::default();
+        outcome_lose1.id = "lolol123".to_string();
+        outcome_lose1.top_predictors = Some(predictors_lose1);
+
+
+        // LOSING PREDICTORS LOSING OUTCOME 2
+        let mut predictor_lose1 = Predictor::default();
+        predictor_lose1.user_name = "char1".to_string();
+        predictor_lose1.channel_points_used = 3333;
+
+        let mut predictor_lose2 = Predictor::default();
+        predictor_lose2.user_name = "kush".to_string();
+        predictor_lose2.channel_points_used = 1750;
+
+        let mut predictor_lose3 = Predictor::default();
+        predictor_lose3.user_name = "dev1".to_string();
+        predictor_lose3.channel_points_used = 50;
+
+        let mut predictor_lose4 = Predictor::default();
+        predictor_lose4.user_name = "lamar".to_string();
+        predictor_lose4.channel_points_used = 400;
+
+        let mut predictor_lose5 = Predictor::default();
+        predictor_lose5.user_name = "uglymf".to_string();
+        predictor_lose5.channel_points_used = 95;
+        
+        let predictors_lose2 = vec![
+            predictor_lose1,
+            predictor_lose2,
+            predictor_lose3,
+            predictor_lose4,
+            predictor_lose5,
+        ];
+
+        // LOSING OUTCOME 2
+        let mut outcome_lose2 = Outcome::default();
+        outcome_lose2.id = "lolol123".to_string();
+        outcome_lose2.top_predictors = Some(predictors_lose2);
+
+        // LOSING PREDICTORS LOSING OUTCOME 3
+        let mut predictor_lose1 = Predictor::default();
+        predictor_lose1.user_name = "apple".to_string();
+        predictor_lose1.channel_points_used = 1999;
+
+        let mut predictor_lose2 = Predictor::default();
+        predictor_lose2.user_name = "bear".to_string();
+        predictor_lose2.channel_points_used = 10008;
+
+        let mut predictor_lose3 = Predictor::default();
+        predictor_lose3.user_name = "witch".to_string();
+        predictor_lose3.channel_points_used = 1222;
+
+        let mut predictor_lose4 = Predictor::default();
+        predictor_lose4.user_name = "cherrypicker".to_string();
+        predictor_lose4.channel_points_used = 5;
+
+        let mut predictor_lose5 = Predictor::default();
+        predictor_lose5.user_name = "dryice456".to_string();
+        predictor_lose5.channel_points_used = 80;
+        
+        let predictors_lose3 = vec![
+            predictor_lose1,
+            predictor_lose2,
+            predictor_lose3,
+            predictor_lose4,
+            predictor_lose5,
+        ];
+
+        // LOSING OUTCOME 3
+        let mut outcome_lose3 = Outcome::default();
+        outcome_lose3.id = "lolol123".to_string();
+        outcome_lose3.top_predictors = Some(predictors_lose3);
+
+        // ALL OUTCOMES
+        let outcomes = vec![
+            outcome_win,
+            outcome_lose1,
+            outcome_lose2,
+            outcome_lose3,
+        ];
+
+        if let Ok((top_predictors_str, top_losers_str)) = get_prediction_end_vars("winning_id123".to_string(), outcomes) {
+            assert_eq!(top_predictors_str, "pisker (+3669), xavier (+1950), rayer (+1000)");
+            assert_eq!(top_losers_str, "bear (-10008), Trevis (-5000), char1 (-3333), chiggs (-2500), apple (-1999), kush (-1750), witch (-1222), tim (-1000), john (-500), lamar (-400)")
+        }
     }
 }
