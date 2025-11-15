@@ -194,7 +194,9 @@ pub fn validate_and_return_command<'a>(
 }
 
 pub fn find_command_by_message<'a>(commands: &'a mut Vec<Command>, msg: &Message) -> (Option<&'a mut Command>, Vec<String>) {
-    let split_message: Vec<String> = msg.message.split(' ').map(|m| m.to_string()).collect();
+    let split_message: Vec<String> = msg.message.split(' ')
+        .map(|m| m.to_string())
+        .collect();
 
     if let Some((command, arguments)) = split_message.split_first() {
         for active_command in commands {

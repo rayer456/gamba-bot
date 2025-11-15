@@ -143,6 +143,22 @@ impl Default for Predictor {
     }
 }
 
+// TODO
+// impl Ord for Predictor {
+//     fn cmp(&self, other: &Predictor) -> Ordering {
+//         // Assume predictor is a winner and try to sort on won channel points
+//         if let Some(a_channel_points_won) = self.channel_points_won {
+//             if let Some(b_channel_points_won) = other.channel_points_won {
+//                 // only return if both a and b have channel_points_won as Some
+//                 ()
+//             }
+//             // sort on channel_points_used if b_won is None
+//         }
+
+//         // 
+//     }
+// }
+
 #[derive(Deserialize, Clone, Debug)]
 pub struct PredictionFromTwitch {
     pub id: String,
@@ -288,7 +304,6 @@ pub fn get_prediction_end_vars(winning_id: String, outcomes: Vec<Outcome>) -> Re
 
 
     Ok((top_predictors_str, top_losers_str))
-
 }
 
 

@@ -285,7 +285,10 @@ impl Bot {
         self.prediction_reminder_time = None;
         match status.to_uppercase().as_str() {
             "RESOLVED" => {
-                let (winner_string, loser_string) = prediction::get_prediction_end_vars(winning_id, outcomes).unwrap_or_else(|_| (String::from("test"), String::from("test")));
+                let (winner_string, loser_string) = match prediction::get_prediction_end_vars(winning_id, outcomes) {
+                    Ok((win_str, lose_str)) => (win_str, lose_str),
+                    Err(e) => return,
+                };
                 self.chat(format!("{winner_string}"));
                 self.chat(format!("{loser_string}"));
 
@@ -504,7 +507,10 @@ impl Bot {
                 let winning_id = latest_pred.outcomes[outcome_int-1].id.clone();
                 Status::Resolved { winning_outcome_id: Some(winning_id) }
             },
-            _ => panic!("shouldn't fucking happen"),
+            PredictionCommandVariant::Start => {
+                println!("ERROR: Prediction start command should not reach this method");
+                return;
+            }
         };
         
         let common_paras = self.get_common_twitch_parameters();
